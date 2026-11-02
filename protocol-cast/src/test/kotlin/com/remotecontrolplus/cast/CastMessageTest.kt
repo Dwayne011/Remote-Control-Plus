@@ -29,11 +29,11 @@ class CastMessageTest {
 
     @Test
     fun `encoding matches a known frame`() {
-        // Produced by the reference node-castv2 implementation for CONNECT.
+        // Field tags and lengths as the reference node-castv2 sender emits for CONNECT.
         val expected = "0800" +
             "1208" + "sender-0".hex() +
             "1a0a" + "receiver-0".hex() +
-            "2227" + Namespaces.CONNECTION.hex() +
+            "2228" + Namespaces.CONNECTION.hex() +
             "2800" +
             "3212" + """{"type":"CONNECT"}""".hex()
         val message = CastMessage(
