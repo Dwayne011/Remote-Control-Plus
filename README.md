@@ -19,7 +19,7 @@ Android 12+, with a fixed seed palette as fallback, light and dark.
 
 - Android 12 (API 31) or newer.
 - Phone and TVs on the same Wi-Fi network.
-- To build: JDK 17 or 21 and the Android SDK (platform 35). Android Studio sets these up.
+- To build: JDK 17 or 21 and the Android SDK (platform 36). Android Studio sets these up.
 
 ## Build
 
