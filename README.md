@@ -46,6 +46,11 @@ or plus and minus on those that do not (Samsung, Roku), and a Keyboard row. Devi
 the controls they support. On Apple TV a swipe is sent as a swipe on the Siri Remote trackpad.
 The connection is picked up again automatically when the app returns to the foreground.
 
+## Quick Settings tile
+
+Add the **Remote** tile from the device switcher ("Add to Quick Settings") or from the
+notification shade's Edit tiles screen. It shows the selected TV and opens the remote.
+
 ## Using it
 
 1. Open the app and tap **Find TVs**. It scans with mDNS (Apple TV, Google TV, Chromecast) and

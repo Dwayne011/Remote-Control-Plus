@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Remote Control Plus</string>
+    <string name="tile_label">Remote</string>
+    <string name="tile_no_device">No TV added</string>
 </resources>

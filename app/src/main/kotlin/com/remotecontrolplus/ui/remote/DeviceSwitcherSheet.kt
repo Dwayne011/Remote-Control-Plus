@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -28,7 +29,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import android.app.StatusBarManager
+import android.content.ComponentName
+import android.content.Context
+import android.graphics.drawable.Icon
+import android.os.Build
+import android.widget.Toast
+import com.remotecontrolplus.RemoteTileService
 import com.remotecontrolplus.core.Haptics
 import com.remotecontrolplus.core.TvDevice
 import com.remotecontrolplus.ui.components.icon
@@ -89,6 +98,19 @@ fun DeviceSwitcherSheet(
                     .fillMaxWidth()
                     .clickable { Haptics.click(); onAdd() },
             )
+            val context = LocalContext.current
+            ListItem(
+                headlineContent = { Text("Add to Quick Settings") },
+                supportingContent = { Text("A Remote tile in the notification shade, like Google's TV remote") },
+                leadingContent = { Icon(Icons.Filled.Dashboard, contentDescription = null) },
+                colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        Haptics.click()
+                        requestQuickSettingsTile(context)
+                    },
+            )
             Spacer(Modifier.height(8.dp))
         }
     }
@@ -103,5 +125,29 @@ fun DeviceSwitcherSheet(
             },
             dismissButton = { TextButton(onClick = { confirmForget = null }) { Text("Cancel") } },
         )
+    }
+}
+
+/** Ask Android to add our tile; on Android 13+ this shows a system confirmation sheet. */
+private fun requestQuickSettingsTile(context: Context) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        val manager = context.getSystemService(StatusBarManager::class.java)
+        val icon = Icon.createWithResource(context, com.remotecontrolplus.R.drawable.ic_tile_remote)
+        manager.requestAddTileService(
+            ComponentName(context, RemoteTileService::class.java),
+            context.getString(com.remotecontrolplus.R.string.tile_label),
+            icon,
+            context.mainExecutor,
+        ) { result ->
+            val message = when (result) {
+                StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED -> "Remote tile added to Quick Settings"
+                StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED -> "The Remote tile is already in Quick Settings"
+                StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_NOT_ADDED -> "Tile not added"
+                else -> "Could not add the tile"
+            }
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    } else {
+        Toast.makeText(context, "Open Quick Settings, tap the pencil, and drag Remote into place", Toast.LENGTH_LONG).show()
     }
 }
