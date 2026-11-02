@@ -93,7 +93,7 @@ class LgController(
     override suspend fun sendKey(key: RemoteKey) {
         when (key) {
             RemoteKey.POWER_ON -> {
-                device.mac?.let { WakeOnLan.send(it) }
+                device.mac?.let { WakeOnLan.send(it, device.host) }
                 return
             }
             RemoteKey.POWER_OFF -> request("ssap://system/turnOff")

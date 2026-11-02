@@ -80,7 +80,7 @@ class SamsungController(
         val code = when (key) {
             RemoteKey.POWER_ON -> {
                 // A TV that is already on ignores a magic packet, so this is safe either way.
-                device.mac?.let { WakeOnLan.send(it) }
+                device.mac?.let { WakeOnLan.send(it, device.host) }
                 if (state.value !is ConnectionState.Connected) return
                 "KEY_POWER"
             }

@@ -137,7 +137,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             selected.distinctUntilChanged { a, b -> a?.id == b?.id }.collect { device ->
                 _controller.value?.disconnect()
                 if (device != null) {
-                    Diagnostics.log("app", "selected ${device.type.label} '${device.name}' (${device.host}:${device.port}) credential=${Diagnostics.redact(credentials.get(device.id))}")
+                    Diagnostics.log("app", "selected ${device.type.label} '${device.name}' (${device.host}:${device.port}) credential=${Diagnostics.redact(credentials.get(device.id))} mac=${device.mac ?: "unknown"}")
                 }
                 _controller.value = device?.let { app.controllers.create(it, credentials.get(it.id)) }
                 _controller.value?.let { c -> withContext(Dispatchers.IO) { c.connect() } }
@@ -177,6 +177,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         runCatching { withContext(Dispatchers.IO) { c.sendKey(key) } }.onFailure {
             Diagnostics.log("app", "$key failed", it)
             _messages.tryEmit(it.message ?: "Command failed")
+        }
+        // A TV woken from standby takes a while to boot; keep trying to connect for a bit.
+        if (key == RemoteKey.POWER_ON && connectionState.value !is ConnectionState.Connected) {
+            if (c.device.mac == null) {
+                _messages.tryEmit("No MAC address known for this TV, so it cannot be woken over the network")
+                return@launch
+            }
+            _messages.tryEmit("Waking ${c.device.name}…")
+            for (delayMs in listOf(5_000L, 7_000L, 8_000L, 10_000L)) {
+                kotlinx.coroutines.delay(delayMs)
+                if (connectionState.value is ConnectionState.Connected) return@launch
+                if (_controller.value?.device?.id != c.device.id) return@launch
+                Diagnostics.log("app", "retrying connection after wake")
+                reconnect().join()
+            }
         }
     }
 
