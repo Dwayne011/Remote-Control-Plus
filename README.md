@@ -41,7 +41,7 @@ debug APK on every push.
 
 The remote follows the Google Home TV remote: a large touch pad (Swipe mode flicks to move and
 taps to select; D-pad mode has buttons), Back and Home, On and Off, previous / play / pause / next,
-mute with a volume slider on devices that report their level (LG, Apple TV, Google TV, Chromecast)
+mute with volume down and up, and a Keyboard row.
 or plus and minus on those that do not (Samsung, Roku), and a Keyboard row. Devices only show
 the controls they support. On Apple TV a swipe is sent as a swipe on the Siri Remote trackpad.
 The connection is picked up again automatically when the app returns to the foreground.
@@ -49,7 +49,8 @@ The connection is picked up again automatically when the app returns to the fore
 ## Quick Settings tile
 
 Add the **Remote** tile from the device switcher ("Add to Quick Settings") or from the
-notification shade's Edit tiles screen. It shows the selected TV; tapping it opens a compact remote over the shade (D-pad, Back/Home,
+notification shade's Edit tiles screen. It shows the selected TV; tapping it opens a full-screen remote over whatever you are doing (close, device chip with a
+switcher, power, the pad, Back/Home,
 power, volume, play/pause) with a button to the full app.
 
 ## Using it

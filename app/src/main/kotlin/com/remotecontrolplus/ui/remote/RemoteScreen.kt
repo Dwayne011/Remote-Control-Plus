@@ -44,17 +44,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -62,14 +57,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.remotecontrolplus.core.Capabilities
 import com.remotecontrolplus.core.Haptics
@@ -79,8 +70,9 @@ import com.remotecontrolplus.ui.MainViewModel
 import com.remotecontrolplus.ui.PairingUiState
 import com.remotecontrolplus.ui.components.PairingDialog
 import com.remotecontrolplus.ui.components.icon
+import com.remotecontrolplus.ui.components.PadModeToggle
+import com.remotecontrolplus.ui.components.TouchPad
 import com.remotecontrolplus.ui.components.skin
-import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -348,119 +340,6 @@ private fun StatusLine(state: ConnectionState, deviceLabel: String, powerState: 
 }
 
 @Composable
-private fun PadModeToggle(mode: String, onChange: (String) -> Unit, modifier: Modifier = Modifier) {
-    SingleChoiceSegmentedButtonRow(modifier = modifier) {
-        SegmentedButton(
-            selected = mode == "swipe",
-            onClick = { onChange("swipe") },
-            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-        ) { Text("Swipe") }
-        SegmentedButton(
-            selected = mode == "dpad",
-            onClick = { onChange("dpad") },
-            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-        ) { Text("D-pad") }
-    }
-}
-
-/**
- * The big square pad from Google Home's remote. In swipe mode a flick in
- * any direction moves and a tap selects; in D-pad mode the chevrons and the
- * centre circle are plain buttons.
- */
-@Composable
-private fun TouchPad(
-    mode: String,
-    enabled: Boolean,
-    onKey: (RemoteKey) -> Unit,
-    onSwipe: (RemoteKey) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val chevronTint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.outlineVariant
-
-    val gestureModifier = if (mode == "swipe" && enabled) {
-        Modifier
-            .pointerInput(Unit) {
-                detectTapGestures(onTap = {
-                    Haptics.click()
-                    onKey(RemoteKey.SELECT)
-                })
-            }
-            .pointerInput(Unit) {
-                var total = Offset.Zero
-                detectDragGestures(
-                    onDragStart = { total = Offset.Zero },
-                    onDrag = { change, delta ->
-                        change.consume()
-                        total += delta
-                    },
-                    onDragEnd = {
-                        val threshold = 40.dp.toPx()
-                        val direction = when {
-                            abs(total.x) < threshold && abs(total.y) < threshold -> null
-                            abs(total.x) > abs(total.y) -> if (total.x > 0) RemoteKey.RIGHT else RemoteKey.LEFT
-                            else -> if (total.y > 0) RemoteKey.DOWN else RemoteKey.UP
-                        }
-                        if (direction != null) {
-                            Haptics.click()
-                            onSwipe(direction)
-                        }
-                    },
-                )
-            }
-    } else {
-        Modifier
-    }
-
-    if (mode == "dpad") {
-        // Google Home's D-pad: one big ring with chevrons, and a large inner disc for OK.
-        Box(
-            modifier = modifier
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-            contentAlignment = Alignment.Center,
-        ) {
-            IconButton(onClick = { onKey(RemoteKey.UP) }, enabled = enabled, modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp).size(64.dp)) {
-                Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Up", tint = chevronTint, modifier = Modifier.size(32.dp))
-            }
-            IconButton(onClick = { onKey(RemoteKey.DOWN) }, enabled = enabled, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp).size(64.dp)) {
-                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Down", tint = chevronTint, modifier = Modifier.size(32.dp))
-            }
-            IconButton(onClick = { onKey(RemoteKey.LEFT) }, enabled = enabled, modifier = Modifier.align(Alignment.CenterStart).padding(start = 12.dp).size(64.dp)) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Left", tint = chevronTint, modifier = Modifier.size(32.dp))
-            }
-            IconButton(onClick = { onKey(RemoteKey.RIGHT) }, enabled = enabled, modifier = Modifier.align(Alignment.CenterEnd).padding(end = 12.dp).size(64.dp)) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Right", tint = chevronTint, modifier = Modifier.size(32.dp))
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(0.44f)
-                    .aspectRatio(1f)
-                    .clip(CircleShape)
-                    .background(if (enabled) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.surfaceContainer)
-                    .clickable(enabled = enabled) { onKey(RemoteKey.SELECT) },
-            )
-        }
-    } else {
-        // Google Home's swipe surface: a plain rounded square with a dot in the middle.
-        Box(
-            modifier = modifier
-                .clip(RoundedCornerShape(28.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                .then(gestureModifier),
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .clip(CircleShape)
-                    .background(if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outlineVariant),
-            )
-        }
-    }
-}
-
-@Composable
 private fun PillButton(icon: ImageVector, label: String, enabled: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     FilledTonalButton(
         onClick = onClick,
@@ -561,30 +440,7 @@ private fun VolumeRow(
             modifier = Modifier.size(56.dp),
         ) { Icon(Icons.Filled.VolumeOff, contentDescription = "Mute") }
 
-        if (slider && level != null) {
-            // Local copy while dragging so the thumb does not fight incoming updates.
-            var dragging by remember { mutableStateOf(false) }
-            var local by remember { mutableFloatStateOf(level) }
-            if (!dragging) local = level
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(56.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                    .padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Filled.VolumeUp, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Slider(
-                    value = local,
-                    onValueChange = { dragging = true; local = it },
-                    onValueChangeFinished = { dragging = false; onSet(local) },
-                    enabled = enabled,
-                    modifier = Modifier.weight(1f).padding(start = 8.dp),
-                )
-            }
-        } else {
+        run {
             Row(
                 modifier = Modifier
                     .weight(1f)

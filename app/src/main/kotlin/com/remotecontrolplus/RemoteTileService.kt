@@ -8,7 +8,6 @@ import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
-import android.view.Gravity
 import android.view.ViewGroup
 import androidx.compose.ui.platform.ComposeView
 import androidx.lifecycle.Lifecycle
@@ -65,8 +64,8 @@ class RemoteTileService : TileService() {
         val owner = DialogOwner()
         val dialog = Dialog(this).apply {
             window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            window?.setGravity(Gravity.BOTTOM)
-            window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            window?.setWindowAnimations(android.R.style.Animation_InputMethod)
         }
         val view = ComposeView(this).apply {
             setViewTreeLifecycleOwner(owner)
@@ -76,6 +75,7 @@ class RemoteTileService : TileService() {
                 RemoteControlPlusTheme {
                     MiniRemote(
                         remote = app.remote,
+                        onDismiss = { dialog.dismiss() },
                         onOpenFull = {
                             dialog.dismiss()
                             openFullRemote()
