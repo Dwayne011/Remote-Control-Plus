@@ -1,0 +1,24 @@
+package com.remotecontrolplus.devices
+
+import com.remotecontrolplus.core.DeviceType
+import com.remotecontrolplus.core.TvController
+import com.remotecontrolplus.core.TvDevice
+import com.remotecontrolplus.discovery.NsdDiscovery
+import kotlinx.coroutines.CoroutineScope
+
+/** Builds the right [TvController] for a device from its stored credential. */
+class ControllerFactory(
+    private val scope: CoroutineScope,
+    private val nsd: NsdDiscovery,
+) {
+    fun create(device: TvDevice, credential: String?): TvController = when (device.type) {
+        DeviceType.SAMSUNG -> SamsungController(device, credential)
+        DeviceType.LG -> LgController(device, credential)
+        DeviceType.ROKU -> RokuController(device)
+        DeviceType.APPLE_TV -> AppleTvController(device, credential, scope) { d ->
+            nsd.resolveCompanionPort(d)
+        }
+        DeviceType.GOOGLE_TV -> GoogleTvController(device, credential, scope)
+        DeviceType.CHROMECAST -> ChromecastController(device, scope)
+    }
+}

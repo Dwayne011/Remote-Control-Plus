@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Roku's ECP and Samsung's device-info endpoint are plain HTTP on the local
+     network, so cleartext must be allowed. Everything else the app does over
+     the internet is nothing: it only ever talks to devices on your Wi-Fi. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

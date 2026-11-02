@@ -1,0 +1,7 @@
+<resources>
+    <!-- Compose draws everything; this only styles the window before the first frame. -->
+    <style name="Theme.RemoteControlPlus" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+</resources>
