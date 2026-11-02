@@ -134,7 +134,7 @@ class SamsungController(
 
     override suspend fun beginPairing(): PairingHandle = object : PairingHandle {
         override val needsPin = false
-        override val instruction = "Select Allow on your Samsung TV"
+        override val instruction = "Your TV is now showing an Allow / Deny prompt. Select Allow with the TV's own remote. Keep this app open; the prompt times out after 30 seconds."
 
         override suspend fun finish(pin: String?): String {
             _state.value = ConnectionState.Connecting

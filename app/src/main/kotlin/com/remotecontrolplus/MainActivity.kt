@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.remotecontrolplus.core.Diagnostics
 import com.remotecontrolplus.ui.MainViewModel
 import com.remotecontrolplus.ui.diagnostics.DiagnosticsScreen
 import com.remotecontrolplus.ui.discover.DiscoverScreen
@@ -17,6 +18,16 @@ import com.remotecontrolplus.ui.theme.RemoteControlPlusTheme
 
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
+
+    override fun onStart() {
+        super.onStart()
+        Diagnostics.log("app", "activity in foreground")
+    }
+
+    override fun onStop() {
+        super.onStop()
+        Diagnostics.log("app", "activity in background")
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

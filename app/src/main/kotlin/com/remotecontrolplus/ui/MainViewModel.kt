@@ -13,6 +13,7 @@ import com.remotecontrolplus.core.RemoteKey
 import com.remotecontrolplus.core.TextFieldState
 import com.remotecontrolplus.core.TvController
 import com.remotecontrolplus.core.TvDevice
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -28,6 +29,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 sealed interface PairingUiState {
     data object Idle : PairingUiState
@@ -99,7 +101,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     Diagnostics.log("app", "selected ${device.type.label} '${device.name}' (${device.host}:${device.port}) credential=${Diagnostics.redact(credentials.get(device.id))}")
                 }
                 _controller.value = device?.let { app.controllers.create(it, credentials.get(it.id)) }
-                _controller.value?.connect()
+                _controller.value?.let { c -> withContext(Dispatchers.IO) { c.connect() } }
             }
         }
         viewModelScope.launch {
@@ -126,13 +128,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val device = selected.value ?: return@launch
         _controller.value?.disconnect()
         _controller.value = app.controllers.create(device, credentials.get(device.id))
-        _controller.value?.connect()
+        _controller.value?.let { c -> withContext(Dispatchers.IO) { c.connect() } }
     }
 
     fun press(key: RemoteKey) = viewModelScope.launch {
         val c = _controller.value ?: return@launch
         Diagnostics.log("app", "press $key on ${c.device.name}")
-        runCatching { c.sendKey(key) }.onFailure {
+        runCatching { withContext(Dispatchers.IO) { c.sendKey(key) } }.onFailure {
             Diagnostics.log("app", "$key failed", it)
             _messages.tryEmit(it.message ?: "Command failed")
         }
@@ -141,7 +143,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun sendText(text: String) = viewModelScope.launch {
         val c = _controller.value ?: return@launch
         Diagnostics.log("app", "send ${text.length} chars of text to ${c.device.name}")
-        runCatching { c.sendText(text) }.onFailure {
+        runCatching { withContext(Dispatchers.IO) { c.sendText(text) } }.onFailure {
             Diagnostics.log("app", "text failed", it)
             _messages.tryEmit(it.message ?: "Could not send text")
         }
@@ -176,6 +178,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startPairing(device: TvDevice) = viewModelScope.launch {
+        if (_pairingDevice.value?.id == device.id && _pairing.value !is PairingUiState.Idle && _pairing.value !is PairingUiState.Failed && _pairing.value != PairingUiState.Done) {
+            Diagnostics.log("app", "pairing already in progress for ${device.name}; ignoring second start")
+            return@launch
+        }
+        Diagnostics.log("app", "start pairing with ${device.type.label} '${device.name}'")
         cancelPairing(silent = true)
         _pairingDevice.value = device
         _pairing.value = PairingUiState.Starting
@@ -188,7 +195,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         pairingController = c
         val handle = try {
-            c.beginPairing()
+            withContext(Dispatchers.IO) { c.beginPairing() }
         } catch (e: Exception) {
             _pairing.value = PairingUiState.Failed(e.message ?: "Could not start pairing")
             return@launch
@@ -212,7 +219,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val device = _pairingDevice.value ?: return
         val handle = pairingHandle ?: return
         try {
-            val credential = handle.finish(pin)
+            val credential = withContext(Dispatchers.IO) { handle.finish(pin) }
             credentials.put(device.id, credential)
             _pairing.value = PairingUiState.Done
             pairingController?.disconnect()

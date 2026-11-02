@@ -127,7 +127,7 @@ class LgController(
 
     override suspend fun beginPairing(): PairingHandle = object : PairingHandle {
         override val needsPin = false
-        override val instruction = "Select Yes on your LG TV"
+        override val instruction = "Your TV is now asking whether to allow this remote. Select Yes with the TV's own remote and keep this app open."
 
         override suspend fun finish(pin: String?): String {
             _state.value = ConnectionState.Connecting
