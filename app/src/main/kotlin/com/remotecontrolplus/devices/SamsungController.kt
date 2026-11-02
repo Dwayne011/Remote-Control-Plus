@@ -3,6 +3,7 @@ package com.remotecontrolplus.devices
 import android.util.Base64
 import com.remotecontrolplus.core.Capabilities
 import com.remotecontrolplus.core.ConnectionState
+import com.remotecontrolplus.core.Diagnostics
 import com.remotecontrolplus.core.NotConnectedException
 import com.remotecontrolplus.core.Pairable
 import com.remotecontrolplus.core.PairingException
@@ -147,6 +148,7 @@ class SamsungController(
 
     private fun send(text: String) {
         val s = socket ?: throw NotConnectedException()
+        Diagnostics.log("samsung", "-> ${text.take(200)}")
         if (!s.send(text)) throw NotConnectedException()
     }
 
@@ -162,9 +164,15 @@ class SamsungController(
             append("wss://${device.host}:8002/api/v2/channels/samsung.remote.control?name=$name")
             if (existingToken != null) append("&token=$existingToken")
         }
+        Diagnostics.log("samsung", "opening wss://${device.host}:8002 token=${Diagnostics.redact(existingToken)}")
         val connected = CompletableDeferred<String>()
         val listener = object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                Diagnostics.log("samsung", "socket open (HTTP ${response.code}); waiting for ms.channel.connect")
+            }
+
             override fun onMessage(webSocket: WebSocket, text: String) {
+                Diagnostics.log("samsung", "<- ${text.take(300)}")
                 val obj = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return
                 when (obj["event"]?.jsonPrimitive?.content) {
                     "ms.channel.connect" -> {
@@ -181,6 +189,7 @@ class SamsungController(
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                Diagnostics.log("samsung", "socket failure (HTTP ${response?.code})", t)
                 connected.completeExceptionally(t)
                 if (_state.value is ConnectionState.Connected) {
                     _state.value = ConnectionState.Error(t.message ?: "Connection lost")

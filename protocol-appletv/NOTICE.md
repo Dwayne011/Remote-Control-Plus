@@ -8,3 +8,4 @@ vectors derive from [pyatv](https://github.com/postlund/pyatv) (MIT).
 Local changes relative to upstream:
 - `build.gradle.kts` rewritten to use this repository's version catalog and a JDK 17 toolchain.
 - Package names and source files are otherwise unchanged, so upstream fixes can be re-applied.
+- `Log.kt`: added a `sink` hook so the app can route wire logging into its diagnostics screen.

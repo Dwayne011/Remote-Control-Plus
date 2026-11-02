@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import com.remotecontrolplus.core.DeviceType
+import com.remotecontrolplus.core.Diagnostics
 import com.remotecontrolplus.core.TvDevice
 import dev.atvremote.protocol.discovery.COMPANION_SERVICE_TYPE
 import kotlinx.coroutines.CancellableContinuation
@@ -28,7 +29,12 @@ class NsdDiscovery(context: Context) {
 
     suspend fun scan(timeoutMs: Long, onFound: (TvDevice) -> Unit) = withContext(Dispatchers.IO) {
         val infos = browse(listOf(COMPANION_SERVICE_TYPE, ANDROID_TV_SERVICE_TYPE, CAST_SERVICE_TYPE), timeoutMs)
-        val resolved = infos.mapNotNull { info -> withTimeoutOrNull(3000) { resolve(info) } }
+        Diagnostics.log("mdns", "browse found ${infos.size} service(s): ${infos.joinToString { it.serviceType.trim('.') + "/" + it.serviceName }}")
+        val resolved = infos.mapNotNull { info ->
+            withTimeoutOrNull(3000) { resolve(info) }
+                ?.also { Diagnostics.log("mdns", "resolved ${it.serviceName} -> ${it.host?.hostAddress}:${it.port}") }
+                ?: run { Diagnostics.log("mdns", "could not resolve ${info.serviceName}"); null }
+        }
 
         // A Google TV device shows up as both a Cast receiver and an Android TV
         // remote service. The remote service is the richer one, so when a host
@@ -52,7 +58,10 @@ class NsdDiscovery(context: Context) {
         for (info in infos) {
             val r = withTimeoutOrNull(3000) { resolve(info) } ?: continue
             val id = r.txt("rpMRtID")
-            if (id == device.id || r.host?.hostAddress == device.host) return@withContext r.port
+            if (id == device.id || r.host?.hostAddress == device.host) {
+                Diagnostics.log("mdns", "Apple TV ${device.name} currently advertises Companion port ${r.port}")
+                return@withContext r.port
+            }
         }
         null
     }

@@ -2,6 +2,7 @@ package com.remotecontrolplus.devices
 
 import com.remotecontrolplus.core.Capabilities
 import com.remotecontrolplus.core.ConnectionState
+import com.remotecontrolplus.core.Diagnostics
 import com.remotecontrolplus.core.NotConnectedException
 import com.remotecontrolplus.core.Pairable
 import com.remotecontrolplus.core.PairingException
@@ -142,13 +143,16 @@ class LgController(
 
     private suspend fun register(existingKey: String?): String {
         disconnect()
+        Diagnostics.log("lg", "opening wss://${device.host}:3001 client-key=${Diagnostics.redact(existingKey)}")
         val registered = CompletableDeferred<String>()
         val listener = object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                Diagnostics.log("lg", "socket open; sending register")
                 webSocket.send(registerPayload(existingKey).toString())
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
+                Diagnostics.log("lg", "<- ${text.take(300)}")
                 val obj = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return
                 val id = obj["id"]?.jsonPrimitive?.content
                 when (obj["type"]?.jsonPrimitive?.content) {
@@ -170,6 +174,7 @@ class LgController(
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                Diagnostics.log("lg", "socket failure (HTTP ${response?.code})", t)
                 registered.completeExceptionally(t)
                 pending.values.forEach { it.completeExceptionally(t) }
                 pending.clear()
@@ -200,6 +205,7 @@ class LgController(
             put("uri", uri)
             if (payload != null) put("payload", payload)
         }
+        Diagnostics.log("lg", "-> $uri ${payload ?: ""}")
         if (!s.send(message.toString())) {
             pending.remove(id)
             throw NotConnectedException()

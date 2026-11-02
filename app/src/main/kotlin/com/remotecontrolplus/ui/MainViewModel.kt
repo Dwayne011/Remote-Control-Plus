@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.remotecontrolplus.RemoteControlPlusApp
 import com.remotecontrolplus.core.Capabilities
 import com.remotecontrolplus.core.ConnectionState
+import com.remotecontrolplus.core.Diagnostics
 import com.remotecontrolplus.core.Pairable
 import com.remotecontrolplus.core.PairingHandle
 import com.remotecontrolplus.core.RemoteKey
@@ -94,9 +95,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             selected.distinctUntilChanged { a, b -> a?.id == b?.id }.collect { device ->
                 _controller.value?.disconnect()
+                if (device != null) {
+                    Diagnostics.log("app", "selected ${device.type.label} '${device.name}' (${device.host}:${device.port}) credential=${Diagnostics.redact(credentials.get(device.id))}")
+                }
                 _controller.value = device?.let { app.controllers.create(it, credentials.get(it.id)) }
                 _controller.value?.connect()
             }
+        }
+        viewModelScope.launch {
+            connectionState.collect { Diagnostics.log("app", "connection state: $it") }
+        }
+        viewModelScope.launch {
+            pairing.collect { if (it != PairingUiState.Idle) Diagnostics.log("app", "pairing state: $it") }
         }
     }
 
@@ -121,12 +131,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun press(key: RemoteKey) = viewModelScope.launch {
         val c = _controller.value ?: return@launch
-        runCatching { c.sendKey(key) }.onFailure { _messages.tryEmit(it.message ?: "Command failed") }
+        Diagnostics.log("app", "press $key on ${c.device.name}")
+        runCatching { c.sendKey(key) }.onFailure {
+            Diagnostics.log("app", "$key failed", it)
+            _messages.tryEmit(it.message ?: "Command failed")
+        }
     }
 
     fun sendText(text: String) = viewModelScope.launch {
         val c = _controller.value ?: return@launch
-        runCatching { c.sendText(text) }.onFailure { _messages.tryEmit(it.message ?: "Could not send text") }
+        Diagnostics.log("app", "send ${text.length} chars of text to ${c.device.name}")
+        runCatching { c.sendText(text) }.onFailure {
+            Diagnostics.log("app", "text failed", it)
+            _messages.tryEmit(it.message ?: "Could not send text")
+        }
     }
 
     fun startScan() {

@@ -2,6 +2,7 @@ package com.remotecontrolplus.devices
 
 import com.remotecontrolplus.core.Capabilities
 import com.remotecontrolplus.core.ConnectionState
+import com.remotecontrolplus.core.Diagnostics
 import com.remotecontrolplus.core.NotConnectedException
 import com.remotecontrolplus.core.Pairable
 import com.remotecontrolplus.core.PairingException
@@ -66,8 +67,10 @@ class GoogleTvController(
         }
         _state.value = ConnectionState.Connecting
         try {
+            Diagnostics.log("googletv", "connecting to ${device.host}:6466 with stored certificate")
             val s = RemoteSession(device.host, id)
             s.connect(scope)
+            Diagnostics.log("googletv", "connected; TV reported ${s.device.value}")
             session = s
             watchers = scope.launch {
                 launch {
@@ -87,6 +90,7 @@ class GoogleTvController(
             // The TV drops the TLS handshake outright when it does not know our
             // certificate, which is how "needs pairing" presents itself.
             val message = e.message ?: ""
+            Diagnostics.log("googletv", "connect failed", e)
             _state.value = if (e is javax.net.ssl.SSLException || "handshake" in message.lowercase()) {
                 ConnectionState.PairingRequired
             } else {
@@ -132,9 +136,12 @@ class GoogleTvController(
         _state.value = ConnectionState.Connecting
         val id = identity() ?: ClientIdentity.generate("remotecontrolplus")
         val pairing = PairingSession(device.host, id, clientName = "Remote Control Plus")
+        Diagnostics.log("googletv", "pairing: opening ${device.host}:6467")
         try {
             pairing.start()
+            Diagnostics.log("googletv", "pairing: handshake done, the TV should now show a code")
         } catch (e: Exception) {
+            Diagnostics.log("googletv", "pairing: could not start", e)
             pairing.close()
             _state.value = ConnectionState.Error(e.message ?: "Pairing failed")
             throw PairingException(e.message ?: "Pairing failed")
@@ -147,7 +154,9 @@ class GoogleTvController(
                 val code = pin?.trim() ?: throw PairingException("A code is required")
                 try {
                     pairing.finish(code)
+                    Diagnostics.log("googletv", "pairing: complete")
                 } catch (e: Exception) {
+                    Diagnostics.log("googletv", "pairing: failed after code entry", e)
                     throw PairingException(e.message ?: "The TV rejected the code")
                 } finally {
                     pairing.close()

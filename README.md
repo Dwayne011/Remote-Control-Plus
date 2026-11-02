@@ -61,6 +61,12 @@ with the Python libraries samsung-tv-ws-api, PyWebOSTV and the Roku ECP docs as 
 
 Each vendored module keeps its upstream licence and a `NOTICE.md` listing local changes.
 
+## Diagnostics
+
+The bug icon in the title bar opens a log of everything the app did: discovery results from
+mDNS, SSDP and the subnet probe, every connection and pairing step, every command sent and any
+error with its stack trace. **Share** sends it as text. Tokens and keys are redacted.
+
 ## Known limitations
 
 - Apple TV and Google TV protocol code is tested against upstream byte-level vectors, but the

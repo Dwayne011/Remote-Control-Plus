@@ -2,6 +2,7 @@ package com.remotecontrolplus.devices
 
 import com.remotecontrolplus.core.Capabilities
 import com.remotecontrolplus.core.ConnectionState
+import com.remotecontrolplus.core.Diagnostics
 import com.remotecontrolplus.core.NotConnectedException
 import com.remotecontrolplus.core.Pairable
 import com.remotecontrolplus.core.PairingException
@@ -58,6 +59,7 @@ class AppleTvController(
         _state.value = ConnectionState.Connecting
         try {
             val port = portResolver(device) ?: device.port
+            Diagnostics.log("appletv", "connecting to ${device.host}:$port with stored credentials")
             val r = AppleTvRemote(device.host, port, credentials, scope)
             r.onDisconnect = { cause ->
                 if (_state.value is ConnectionState.Connected) {
@@ -72,10 +74,13 @@ class AppleTvController(
             }
             r.connect()
             remote = r
+            Diagnostics.log("appletv", "connected and session started")
             _state.value = ConnectionState.Connected
         } catch (e: dev.atvremote.protocol.companion.PairingException) {
+            Diagnostics.log("appletv", "credentials rejected; pairing required", e)
             _state.value = ConnectionState.PairingRequired
         } catch (e: Exception) {
+            Diagnostics.log("appletv", "connect failed", e)
             _state.value = ConnectionState.Error(e.message ?: "Could not connect")
         }
     }
@@ -116,11 +121,16 @@ class AppleTvController(
         disconnect()
         _state.value = ConnectionState.Connecting
         val port = portResolver(device) ?: device.port
+        Diagnostics.log("appletv", "pairing: opening ${device.host}:$port (stored port ${device.port})")
         val client = CompanionClient(device.host, port, scope)
-        client.connect()
         val session = try {
-            client.startPairing(deviceName = "Remote Control Plus")
+            client.connect()
+            Diagnostics.log("appletv", "pairing: TCP connected, sending pair-setup M1")
+            client.startPairing(deviceName = "Remote Control Plus").also {
+                Diagnostics.log("appletv", "pairing: M2 received, the Apple TV should now show a code")
+            }
         } catch (e: Exception) {
+            Diagnostics.log("appletv", "pairing: could not start", e)
             client.close()
             _state.value = ConnectionState.Error(e.message ?: "Pairing failed")
             throw PairingException(e.message ?: "Pairing failed")
@@ -131,9 +141,11 @@ class AppleTvController(
 
             override suspend fun finish(pin: String?): String {
                 val code = pin?.trim() ?: throw PairingException("A code is required")
+                Diagnostics.log("appletv", "pairing: submitting ${code.length}-digit code")
                 return try {
-                    session.complete(code).serialize()
+                    session.complete(code).serialize().also { Diagnostics.log("appletv", "pairing: complete") }
                 } catch (e: Exception) {
+                    Diagnostics.log("appletv", "pairing: failed after code entry", e)
                     throw PairingException(e.message ?: "The Apple TV rejected the code")
                 } finally {
                     client.close()

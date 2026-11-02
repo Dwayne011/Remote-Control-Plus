@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Link
@@ -72,6 +73,7 @@ import com.remotecontrolplus.ui.components.PairingDialog
 fun RemoteScreen(
     viewModel: MainViewModel,
     onAddDevice: () -> Unit,
+    onDiagnostics: () -> Unit,
 ) {
     val devices by viewModel.devices.collectAsStateWithLifecycle()
     val selected by viewModel.selected.collectAsStateWithLifecycle()
@@ -106,6 +108,9 @@ fun RemoteScreen(
                         IconButton(onClick = { viewModel.reconnect() }) {
                             Icon(Icons.Filled.Refresh, contentDescription = "Reconnect")
                         }
+                    }
+                    IconButton(onClick = onDiagnostics) {
+                        Icon(Icons.Filled.BugReport, contentDescription = "Diagnostics")
                     }
                     IconButton(onClick = onAddDevice) {
                         Icon(Icons.Filled.Add, contentDescription = "Add a TV")
