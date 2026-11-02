@@ -351,7 +351,6 @@ private fun TouchPad(
     onSwipe: (RemoteKey) -> Unit,
 ) {
     val haptics = LocalHapticFeedback.current
-    val shape = RoundedCornerShape(28.dp)
     val chevronTint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.outlineVariant
 
     val gestureModifier = if (mode == "swipe" && enabled) {
@@ -388,43 +387,51 @@ private fun TouchPad(
         Modifier
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(1f)
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .then(gestureModifier),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (mode == "dpad") {
-            IconButton(onClick = { onKey(RemoteKey.UP) }, enabled = enabled, modifier = Modifier.align(Alignment.TopCenter).padding(8.dp).size(56.dp)) {
-                Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Up", tint = chevronTint)
+    if (mode == "dpad") {
+        // Google Home's D-pad: one big ring with chevrons, and a large inner disc for OK.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+            contentAlignment = Alignment.Center,
+        ) {
+            IconButton(onClick = { onKey(RemoteKey.UP) }, enabled = enabled, modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp).size(64.dp)) {
+                Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Up", tint = chevronTint, modifier = Modifier.size(32.dp))
             }
-            IconButton(onClick = { onKey(RemoteKey.DOWN) }, enabled = enabled, modifier = Modifier.align(Alignment.BottomCenter).padding(8.dp).size(56.dp)) {
-                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Down", tint = chevronTint)
+            IconButton(onClick = { onKey(RemoteKey.DOWN) }, enabled = enabled, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp).size(64.dp)) {
+                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Down", tint = chevronTint, modifier = Modifier.size(32.dp))
             }
-            IconButton(onClick = { onKey(RemoteKey.LEFT) }, enabled = enabled, modifier = Modifier.align(Alignment.CenterStart).padding(8.dp).size(56.dp)) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Left", tint = chevronTint)
+            IconButton(onClick = { onKey(RemoteKey.LEFT) }, enabled = enabled, modifier = Modifier.align(Alignment.CenterStart).padding(start = 12.dp).size(64.dp)) {
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Left", tint = chevronTint, modifier = Modifier.size(32.dp))
             }
-            IconButton(onClick = { onKey(RemoteKey.RIGHT) }, enabled = enabled, modifier = Modifier.align(Alignment.CenterEnd).padding(8.dp).size(56.dp)) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Right", tint = chevronTint)
+            IconButton(onClick = { onKey(RemoteKey.RIGHT) }, enabled = enabled, modifier = Modifier.align(Alignment.CenterEnd).padding(end = 12.dp).size(64.dp)) {
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Right", tint = chevronTint, modifier = Modifier.size(32.dp))
             }
             Box(
                 modifier = Modifier
-                    .size(88.dp)
+                    .fillMaxWidth(0.44f)
+                    .aspectRatio(1f)
                     .clip(CircleShape)
-                    .background(if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outlineVariant)
+                    .background(if (enabled) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.surfaceContainer)
                     .clickable(enabled = enabled) { onKey(RemoteKey.SELECT) },
             )
-        } else {
-            Icon(Icons.Filled.KeyboardArrowUp, contentDescription = null, tint = chevronTint, modifier = Modifier.align(Alignment.TopCenter).padding(12.dp))
-            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = chevronTint, modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp))
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = null, tint = chevronTint, modifier = Modifier.align(Alignment.CenterStart).padding(12.dp))
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = chevronTint, modifier = Modifier.align(Alignment.CenterEnd).padding(12.dp))
+        }
+    } else {
+        // Google Home's swipe surface: a plain rounded square with a dot in the middle.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(28.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .then(gestureModifier),
+            contentAlignment = Alignment.Center,
+        ) {
             Box(
                 modifier = Modifier
-                    .size(88.dp)
+                    .size(56.dp)
                     .clip(CircleShape)
                     .background(if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outlineVariant),
             )
