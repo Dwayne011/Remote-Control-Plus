@@ -2,6 +2,7 @@ package com.remotecontrolplus
 
 import android.app.Application
 import com.remotecontrolplus.core.Diagnostics
+import com.remotecontrolplus.core.Haptics
 import com.remotecontrolplus.data.CredentialStore
 import com.remotecontrolplus.data.DeviceRepository
 import com.remotecontrolplus.devices.ControllerFactory
@@ -19,6 +20,7 @@ class RemoteControlPlusApp : Application() {
         super.onCreate()
         dev.atvremote.protocol.Log.sink = { Diagnostics.log("atv-wire", it) }
         dev.atvremote.protocol.Log.enabled = true
+        Haptics.init(this)
         Diagnostics.log("app", "started")
     }
 

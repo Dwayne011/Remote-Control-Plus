@@ -7,6 +7,7 @@ import com.remotecontrolplus.RemoteControlPlusApp
 import com.remotecontrolplus.core.Capabilities
 import com.remotecontrolplus.core.ConnectionState
 import com.remotecontrolplus.core.Diagnostics
+import com.remotecontrolplus.core.Haptics
 import com.remotecontrolplus.core.Pairable
 import com.remotecontrolplus.core.PairingHandle
 import com.remotecontrolplus.core.RemoteKey
@@ -81,6 +82,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun swipe(direction: RemoteKey) = viewModelScope.launch {
         val c = _controller.value ?: return@launch
+        Haptics.tick()
         Diagnostics.log("app", "swipe $direction on ${c.device.name}")
         runCatching { withContext(Dispatchers.IO) { c.swipe(direction) } }.onFailure {
             Diagnostics.log("app", "swipe failed", it)
@@ -170,6 +172,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun press(key: RemoteKey) = viewModelScope.launch {
         val c = _controller.value ?: return@launch
+        Haptics.click()
         Diagnostics.log("app", "press $key on ${c.device.name}")
         runCatching { withContext(Dispatchers.IO) { c.sendKey(key) } }.onFailure {
             Diagnostics.log("app", "$key failed", it)

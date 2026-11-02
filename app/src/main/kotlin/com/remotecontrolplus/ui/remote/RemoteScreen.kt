@@ -7,16 +7,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -46,8 +45,6 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
@@ -71,9 +68,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.clickable
@@ -81,11 +76,14 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.remotecontrolplus.core.Capabilities
+import com.remotecontrolplus.core.Haptics
 import com.remotecontrolplus.core.ConnectionState
 import com.remotecontrolplus.core.RemoteKey
 import com.remotecontrolplus.ui.MainViewModel
 import com.remotecontrolplus.ui.PairingUiState
 import com.remotecontrolplus.ui.components.PairingDialog
+import com.remotecontrolplus.ui.components.icon
+import com.remotecontrolplus.ui.components.skin
 import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -148,41 +146,68 @@ fun RemoteScreen(
         } else {
             val caps = capabilities ?: Capabilities(emptySet(), false)
             val connected = connection is ConnectionState.Connected
+            // No scrolling: the fixed rows take what they need and the pad
+            // flexes to fill whatever height is left.
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 20.dp, vertical = 4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                ConnectionBanner(
-                    state = connection,
-                    deviceLabel = device.type.label,
-                    onPair = { viewModel.startPairing(device) },
-                    onRetry = { viewModel.reconnect() },
-                )
-                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ConnectionBanner(
+                        state = connection,
+                        deviceLabel = device.type.label,
+                        onPair = { viewModel.startPairing(device) },
+                        onRetry = { viewModel.reconnect() },
+                    )
+                    if (caps.keys.any { it in Capabilities.NAVIGATION }) {
+                        PadModeToggle(mode = padMode, onChange = viewModel::setPadMode)
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (caps.keys.any { it in Capabilities.NAVIGATION }) {
+                        TouchPad(
+                            mode = padMode,
+                            enabled = connected,
+                            onKey = viewModel::press,
+                            onSwipe = viewModel::swipe,
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .aspectRatio(1f, matchHeightConstraintsFirst = true),
+                        )
+                    } else {
+                        Icon(
+                            device.type.icon(),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.outlineVariant,
+                            modifier = Modifier.size(96.dp),
+                        )
+                    }
+                }
 
                 if (caps.keys.any { it in Capabilities.NAVIGATION }) {
-                    PadModeToggle(mode = padMode, onChange = viewModel::setPadMode)
-                    Spacer(Modifier.height(12.dp))
-                    TouchPad(
-                        mode = padMode,
-                        enabled = connected,
-                        onKey = viewModel::press,
-                        onSwipe = viewModel::swipe,
-                    )
-                    Spacer(Modifier.height(16.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        PillButton(Icons.AutoMirrored.Filled.ArrowBack, "Back", connected && RemoteKey.BACK in caps.keys, Modifier.weight(1f)) {
+                        val skin = device.type.skin()
+                        PillButton(skin.backIcon, skin.backLabel, connected && RemoteKey.BACK in caps.keys, Modifier.weight(1f)) {
                             viewModel.press(RemoteKey.BACK)
                         }
-                        PillButton(Icons.Filled.Home, "Home", connected && RemoteKey.HOME in caps.keys, Modifier.weight(1f)) {
+                        PillButton(skin.homeIcon, skin.homeLabel, connected && RemoteKey.HOME in caps.keys, Modifier.weight(1f)) {
                             viewModel.press(RemoteKey.HOME)
                         }
                     }
-                    Spacer(Modifier.height(16.dp))
                 }
 
                 PowerRow(
@@ -193,10 +218,8 @@ fun RemoteScreen(
                     offEnabled = connected,
                     onKey = viewModel::press,
                 )
-                Spacer(Modifier.height(16.dp))
 
                 MediaRow(keys = caps.keys, enabled = connected, onKey = viewModel::press)
-                Spacer(Modifier.height(16.dp))
 
                 VolumeRow(
                     keys = caps.keys,
@@ -206,25 +229,22 @@ fun RemoteScreen(
                     onKey = viewModel::press,
                     onSet = viewModel::setVolume,
                 )
-                Spacer(Modifier.height(16.dp))
 
                 if (caps.textEntry) {
-                    ListItem(
-                        headlineContent = { Text("Keyboard") },
-                        supportingContent = if (textField.focused) {
-                            { Text("A text field is focused on the TV") }
-                        } else {
-                            null
-                        },
-                        leadingContent = { Icon(Icons.Filled.Keyboard, contentDescription = null) },
-                        colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                    FilledTonalButton(
+                        onClick = { keyboardOpen = true },
+                        enabled = connected,
+                        shape = RoundedCornerShape(16.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
-                            .clickable(enabled = connected) { keyboardOpen = true },
-                    )
+                            .height(48.dp),
+                    ) {
+                        Icon(Icons.Filled.Keyboard, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (textField.focused) "Keyboard · field focused on TV" else "Keyboard")
+                    }
                 }
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(4.dp))
             }
         }
     }
@@ -349,15 +369,15 @@ private fun TouchPad(
     enabled: Boolean,
     onKey: (RemoteKey) -> Unit,
     onSwipe: (RemoteKey) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val haptics = LocalHapticFeedback.current
     val chevronTint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.outlineVariant
 
     val gestureModifier = if (mode == "swipe" && enabled) {
         Modifier
             .pointerInput(Unit) {
                 detectTapGestures(onTap = {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    Haptics.click()
                     onKey(RemoteKey.SELECT)
                 })
             }
@@ -377,7 +397,7 @@ private fun TouchPad(
                             else -> if (total.y > 0) RemoteKey.DOWN else RemoteKey.UP
                         }
                         if (direction != null) {
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            Haptics.click()
                             onSwipe(direction)
                         }
                     },
@@ -390,9 +410,7 @@ private fun TouchPad(
     if (mode == "dpad") {
         // Google Home's D-pad: one big ring with chevrons, and a large inner disc for OK.
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1f)
+            modifier = modifier
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh),
             contentAlignment = Alignment.Center,
@@ -421,9 +439,7 @@ private fun TouchPad(
     } else {
         // Google Home's swipe surface: a plain rounded square with a dot in the middle.
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1f)
+            modifier = modifier
                 .clip(RoundedCornerShape(28.dp))
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 .then(gestureModifier),
@@ -445,7 +461,7 @@ private fun PillButton(icon: ImageVector, label: String, enabled: Boolean, modif
         onClick = onClick,
         enabled = enabled,
         shape = RoundedCornerShape(20.dp),
-        modifier = modifier.height(64.dp),
+        modifier = modifier.height(56.dp),
     ) {
         Icon(icon, contentDescription = label)
     }
@@ -464,7 +480,7 @@ private fun PowerRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(64.dp)
+            .height(56.dp)
             .clip(RoundedCornerShape(20.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
     ) {
@@ -507,10 +523,10 @@ private fun MediaRow(keys: Set<RemoteKey>, enabled: Boolean, onKey: (RemoteKey) 
         IconButton(onClick = { onKey(RemoteKey.PREVIOUS) }, enabled = enabled && RemoteKey.PREVIOUS in keys) {
             Icon(Icons.Filled.SkipPrevious, contentDescription = "Previous")
         }
-        FilledTonalIconButton(onClick = { onKey(RemoteKey.PLAY) }, enabled = enabled && RemoteKey.PLAY in keys, modifier = Modifier.size(72.dp)) {
+        FilledTonalIconButton(onClick = { onKey(RemoteKey.PLAY) }, enabled = enabled && RemoteKey.PLAY in keys, modifier = Modifier.size(60.dp)) {
             Icon(Icons.Filled.PlayArrow, contentDescription = "Play")
         }
-        FilledTonalIconButton(onClick = { onKey(RemoteKey.PAUSE) }, enabled = enabled && RemoteKey.PAUSE in keys, modifier = Modifier.size(72.dp)) {
+        FilledTonalIconButton(onClick = { onKey(RemoteKey.PAUSE) }, enabled = enabled && RemoteKey.PAUSE in keys, modifier = Modifier.size(60.dp)) {
             Icon(Icons.Filled.Pause, contentDescription = "Pause")
         }
         IconButton(onClick = { onKey(RemoteKey.NEXT) }, enabled = enabled && RemoteKey.NEXT in keys) {
@@ -537,7 +553,7 @@ private fun VolumeRow(
         FilledTonalIconButton(
             onClick = { onKey(RemoteKey.MUTE) },
             enabled = enabled && RemoteKey.MUTE in keys,
-            modifier = Modifier.size(64.dp),
+            modifier = Modifier.size(56.dp),
         ) { Icon(Icons.Filled.VolumeOff, contentDescription = "Mute") }
 
         if (slider && level != null) {
@@ -548,7 +564,7 @@ private fun VolumeRow(
             Row(
                 modifier = Modifier
                     .weight(1f)
-                    .height(64.dp)
+                    .height(56.dp)
                     .clip(RoundedCornerShape(20.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                     .padding(horizontal = 12.dp),
@@ -567,7 +583,7 @@ private fun VolumeRow(
             Row(
                 modifier = Modifier
                     .weight(1f)
-                    .height(64.dp)
+                    .height(56.dp)
                     .clip(RoundedCornerShape(20.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerHigh),
             ) {
