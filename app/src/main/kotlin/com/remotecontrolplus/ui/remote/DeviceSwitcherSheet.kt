@@ -29,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.remotecontrolplus.core.Haptics
 import com.remotecontrolplus.core.TvDevice
 import com.remotecontrolplus.ui.components.icon
 
@@ -65,7 +66,7 @@ fun DeviceSwitcherSheet(
                         if (selected) {
                             Icon(Icons.Filled.Check, contentDescription = "Selected", tint = MaterialTheme.colorScheme.primary)
                         } else {
-                            IconButton(onClick = { confirmForget = device }) {
+                            IconButton(onClick = { Haptics.click(); confirmForget = device }) {
                                 Icon(Icons.Filled.DeleteOutline, contentDescription = "Forget ${device.name}")
                             }
                         }
@@ -86,7 +87,7 @@ fun DeviceSwitcherSheet(
                 colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(onClick = onAdd),
+                    .clickable { Haptics.click(); onAdd() },
             )
             Spacer(Modifier.height(8.dp))
         }

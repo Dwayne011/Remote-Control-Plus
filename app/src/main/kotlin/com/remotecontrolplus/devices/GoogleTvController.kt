@@ -43,6 +43,9 @@ class GoogleTvController(
 
     override val capabilities = Capabilities(keys = Capabilities.ALL_KEYS, textEntry = true, volumeSlider = true)
 
+    private val _powerState = MutableStateFlow<Boolean?>(null)
+    override val powerState: StateFlow<Boolean?> = _powerState.asStateFlow()
+
     private val _volume = MutableStateFlow<Float?>(null)
     override val volume: StateFlow<Float?> = _volume.asStateFlow()
 
@@ -77,6 +80,7 @@ class GoogleTvController(
             session = s
             watchers = scope.launch {
                 launch { s.volume.collect { v -> _volume.value = v?.fraction } }
+                launch { s.isOn.collect { on -> _powerState.value = on } }
                 launch {
                     s.disconnects.collect { reason ->
                         if (_state.value is ConnectionState.Connected) {
@@ -107,6 +111,7 @@ class GoogleTvController(
         watchers?.cancel()
         watchers = null
         session?.close()
+        _powerState.value = null
         session = null
         _state.value = ConnectionState.Disconnected
     }

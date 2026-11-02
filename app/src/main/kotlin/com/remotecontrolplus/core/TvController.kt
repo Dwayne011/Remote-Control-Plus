@@ -14,6 +14,10 @@ interface TvController {
     val state: StateFlow<ConnectionState>
     val textField: StateFlow<TextFieldState>
 
+    /** True when the device is known to be on, false when known off, null when it cannot tell. */
+    val powerState: StateFlow<Boolean?>
+        get() = UNKNOWN_POWER
+
     /** Volume as 0..1 when the device reports it, else null. */
     val volume: StateFlow<Float?>
         get() = NO_VOLUME
@@ -40,6 +44,7 @@ interface TvController {
 
     companion object {
         private val NO_VOLUME: StateFlow<Float?> = MutableStateFlow(null)
+        private val UNKNOWN_POWER: StateFlow<Boolean?> = MutableStateFlow(null)
     }
 }
 

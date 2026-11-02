@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.remotecontrolplus.RemoteControlPlusApp
 import com.remotecontrolplus.core.Capabilities
 import com.remotecontrolplus.core.ConnectionState
+import com.remotecontrolplus.core.DeviceType
 import com.remotecontrolplus.core.Diagnostics
 import com.remotecontrolplus.core.Haptics
 import com.remotecontrolplus.core.Pairable
@@ -78,7 +79,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val padMode: StateFlow<String> = repository.padMode
         .stateIn(viewModelScope, SharingStarted.Eagerly, "swipe")
 
-    fun setPadMode(mode: String) = viewModelScope.launch { repository.setPadMode(mode) }
+    fun setPadMode(mode: String) = viewModelScope.launch {
+        Haptics.tick()
+        repository.setPadMode(mode)
+    }
 
     fun swipe(direction: RemoteKey) = viewModelScope.launch {
         val c = _controller.value ?: return@launch
@@ -91,6 +95,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setVolume(fraction: Float) = viewModelScope.launch {
+        Haptics.tick()
         val c = _controller.value ?: return@launch
         runCatching { withContext(Dispatchers.IO) { c.setVolume(fraction) } }.onFailure {
             Diagnostics.log("app", "set volume failed", it)
@@ -108,6 +113,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             reconnect()
         }
     }
+
+    private val _waking = MutableStateFlow(false)
+    /** True while the app is retrying the connection after sending a wake packet. */
+    val waking: StateFlow<Boolean> = _waking.asStateFlow()
+
+    /**
+     * Whether the selected TV is on. Samsung and LG only answer when they are
+     * on, so connection state is the answer; Google TV reports it; others are unknown.
+     */
+    val powerState: StateFlow<Boolean?> = combine(
+        _controller.flatMapLatest { it?.powerState ?: flowOf(null) },
+        connectionState,
+        selected,
+    ) { reported, connection, device ->
+        when (device?.type) {
+            DeviceType.SAMSUNG, DeviceType.LG -> connection is ConnectionState.Connected
+            else -> reported
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val messages: SharedFlow<String> = _messages.asSharedFlow()
 
@@ -153,7 +177,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // ------------------------------------------------------------- actions
 
-    fun selectDevice(id: String) = viewModelScope.launch { repository.select(id) }
+    fun selectDevice(id: String) = viewModelScope.launch {
+        Haptics.click()
+        repository.select(id)
+    }
 
     fun forgetDevice(id: String) = viewModelScope.launch {
         if (selected.value?.id == id) {
@@ -184,13 +211,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _messages.tryEmit("No MAC address known for this TV, so it cannot be woken over the network")
                 return@launch
             }
-            _messages.tryEmit("Waking ${c.device.name}…")
-            for (delayMs in listOf(5_000L, 7_000L, 8_000L, 10_000L)) {
-                kotlinx.coroutines.delay(delayMs)
-                if (connectionState.value is ConnectionState.Connected) return@launch
-                if (_controller.value?.device?.id != c.device.id) return@launch
-                Diagnostics.log("app", "retrying connection after wake")
-                reconnect().join()
+            _messages.tryEmit("Wake packet sent to ${c.device.name}")
+            _waking.value = true
+            try {
+                for (delayMs in listOf(5_000L, 7_000L, 8_000L, 10_000L)) {
+                    kotlinx.coroutines.delay(delayMs)
+                    if (connectionState.value is ConnectionState.Connected) return@launch
+                    if (_controller.value?.device?.id != c.device.id) return@launch
+                    Diagnostics.log("app", "retrying connection after wake")
+                    reconnect().join()
+                }
+                if (connectionState.value !is ConnectionState.Connected) {
+                    _messages.tryEmit("${c.device.name} did not come online. Check Power On with Mobile is enabled on the TV.")
+                }
+            } finally {
+                _waking.value = false
             }
         }
     }

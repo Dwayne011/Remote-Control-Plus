@@ -96,6 +96,8 @@ fun RemoteScreen(
     val textField by viewModel.textField.collectAsStateWithLifecycle()
     val volume by viewModel.volume.collectAsStateWithLifecycle()
     val padMode by viewModel.padMode.collectAsStateWithLifecycle()
+    val powerState by viewModel.powerState.collectAsStateWithLifecycle()
+    val waking by viewModel.waking.collectAsStateWithLifecycle()
     val pairing by viewModel.pairing.collectAsStateWithLifecycle()
     val pairingDevice by viewModel.pairingDevice.collectAsStateWithLifecycle()
 
@@ -119,27 +121,27 @@ fun RemoteScreen(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(12.dp))
-                                .clickable { switcherOpen = true }
+                                .clickable { Haptics.click(); switcherOpen = true }
                                 .padding(horizontal = 12.dp, vertical = 2.dp),
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(device.name, style = MaterialTheme.typography.titleLarge, maxLines = 1)
                                 Icon(Icons.Filled.ArrowDropDown, contentDescription = "Switch TV")
                             }
-                            StatusLine(state = connection, deviceLabel = device.type.label)
+                            StatusLine(state = connection, deviceLabel = device.type.label, powerState = powerState, waking = waking)
                         }
                     }
                 },
                 actions = {
                     if (selected != null) {
-                        IconButton(onClick = { viewModel.reconnect() }) {
+                        IconButton(onClick = { Haptics.click(); viewModel.reconnect() }) {
                             Icon(Icons.Filled.Refresh, contentDescription = "Reconnect")
                         }
                     }
-                    IconButton(onClick = onDiagnostics) {
+                    IconButton(onClick = { Haptics.click(); onDiagnostics() }) {
                         Icon(Icons.Filled.BugReport, contentDescription = "Diagnostics")
                     }
-                    IconButton(onClick = onAddDevice) {
+                    IconButton(onClick = { Haptics.click(); onAddDevice() }) {
                         Icon(Icons.Filled.Add, contentDescription = "Add a TV")
                     }
                 },
@@ -223,8 +225,8 @@ fun RemoteScreen(
                     showOn = RemoteKey.POWER_ON in caps.keys,
                     showOff = RemoteKey.POWER_OFF in caps.keys,
                     offLabel = caps.offLabel,
-                    onEnabled = connected || device.mac != null,
-                    offEnabled = connected,
+                    onEnabled = powerState != true && !waking && (connected || device.mac != null),
+                    offEnabled = connected && powerState != false,
                     onKey = viewModel::press,
                 )
 
@@ -241,7 +243,7 @@ fun RemoteScreen(
 
                 if (caps.textEntry) {
                     FilledTonalButton(
-                        onClick = { keyboardOpen = true },
+                        onClick = { Haptics.click(); keyboardOpen = true },
                         enabled = connected,
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier
@@ -316,13 +318,17 @@ private fun EmptyState(onAddDevice: () -> Unit, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun StatusLine(state: ConnectionState, deviceLabel: String) {
-    val (dot, text) = when (state) {
+private fun StatusLine(state: ConnectionState, deviceLabel: String, powerState: Boolean?, waking: Boolean) {
+    val (dot, text) = when {
+        waking -> MaterialTheme.colorScheme.tertiary to "Waking up…"
+        powerState == false && state !is ConnectionState.Connecting -> MaterialTheme.colorScheme.outline to "Off"
+        else -> when (state) {
         ConnectionState.Connected -> MaterialTheme.colorScheme.primary to "Connected"
         ConnectionState.Connecting -> MaterialTheme.colorScheme.tertiary to "Connecting…"
         ConnectionState.PairingRequired -> MaterialTheme.colorScheme.tertiary to "Not paired"
         ConnectionState.Disconnected -> MaterialTheme.colorScheme.outline to "Not connected"
         is ConnectionState.Error -> MaterialTheme.colorScheme.error to state.message
+        }
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
