@@ -8,16 +8,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -46,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.remotecontrolplus.core.Capabilities
@@ -57,11 +53,12 @@ import com.remotecontrolplus.ui.components.TouchPad
 import com.remotecontrolplus.ui.components.icon
 import com.remotecontrolplus.ui.components.skin
 
+private val PAD_HEIGHT = 236.dp
+
 /**
- * The full-screen remote shown from the Quick Settings tile, after Google
- * Home's: close, device chip with a switcher, power; the pad; Back, Home and
- * a button to the full app; mute and volume. Swipe down anywhere outside
- * the pad to dismiss.
+ * The pop-up remote card, after Google Home's: close, device chip with a
+ * switcher, power; the pad; Back, Home and open-full; mute and volume.
+ * Full width, compact height, and a downward swipe on it dismisses.
  */
 @Composable
 fun MiniRemote(remote: RemoteManager, onOpenFull: () -> Unit, onDismiss: () -> Unit) {
@@ -75,39 +72,46 @@ fun MiniRemote(remote: RemoteManager, onOpenFull: () -> Unit, onDismiss: () -> U
 
     val caps = capabilities ?: Capabilities(emptySet(), false)
     val connected = connection is ConnectionState.Connected
+    val hasNavigation = caps.keys.any { it in Capabilities.NAVIGATION }
     val press: (RemoteKey) -> Unit = { remote.press(it) }
     var switcherOpen by remember { mutableStateOf(false) }
 
     Surface(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .pointerInput(Unit) {
                 var total = 0f
                 detectVerticalDragGestures(
                     onDragStart = { total = 0f },
                     onVerticalDrag = { _, delta -> total += delta },
-                    onDragEnd = { if (total > 120.dp.toPx()) onDismiss() },
+                    onDragEnd = { if (total > 100.dp.toPx()) onDismiss() },
                 )
             },
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 8.dp),
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            // Drag handle
+            Box(
+                Modifier
+                    .width(32.dp)
+                    .height(4.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.outlineVariant),
+            )
+
             // Close · device chip · power
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                RoundButton(Icons.Filled.Close, "Close", enabled = true, size = 52.dp) { Haptics.click(); onDismiss() }
-                Spacer(Modifier.weight(1f))
-                Box {
+                RoundButton(Icons.Filled.Close, "Close", enabled = true, size = 48.dp) { Haptics.click(); onDismiss() }
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     DeviceChip(
                         name = device?.name ?: "No TV",
                         icon = device?.type?.icon(),
@@ -138,7 +142,6 @@ fun MiniRemote(remote: RemoteManager, onOpenFull: () -> Unit, onDismiss: () -> U
                         }
                     }
                 }
-                Spacer(Modifier.weight(1f))
                 val onTv = powerState == true || (powerState == null && connected)
                 val powerAvailable = (RemoteKey.POWER_ON in caps.keys || RemoteKey.POWER_OFF in caps.keys) &&
                     !waking && (connected || device?.mac != null)
@@ -146,67 +149,55 @@ fun MiniRemote(remote: RemoteManager, onOpenFull: () -> Unit, onDismiss: () -> U
                     Icons.Filled.PowerSettingsNew,
                     if (onTv) "Turn off" else "Turn on",
                     enabled = powerAvailable,
-                    size = 52.dp,
+                    size = 48.dp,
                 ) { press(if (onTv) RemoteKey.POWER_OFF else RemoteKey.POWER_ON) }
             }
 
-            // The pad takes whatever height the fixed rows leave.
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (caps.keys.any { it in Capabilities.NAVIGATION }) {
-                    TouchPad(
-                        mode = padMode,
-                        enabled = connected,
-                        onKey = press,
-                        onSwipe = { remote.swipe(it) },
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .aspectRatio(0.8f, matchHeightConstraintsFirst = true),
-                        showHint = true,
-                    )
-                } else {
-                    Icon(
-                        device?.type?.icon() ?: Icons.Filled.Keyboard,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.outlineVariant,
-                        modifier = Modifier.size(96.dp),
-                    )
-                }
+            // Pad: a wide rounded surface in swipe mode, a circle in D-pad mode.
+            if (hasNavigation) {
+                TouchPad(
+                    mode = padMode,
+                    enabled = connected,
+                    onKey = press,
+                    onSwipe = { remote.swipe(it) },
+                    modifier = if (padMode == "dpad") {
+                        Modifier.size(PAD_HEIGHT)
+                    } else {
+                        Modifier
+                            .fillMaxWidth()
+                            .height(PAD_HEIGHT)
+                    },
+                    showHint = true,
+                )
             }
 
             // Back · Home · open full remote
-            if (caps.keys.any { it in Capabilities.NAVIGATION }) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 val skin = device?.type?.skin()
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    RoundButton(skin?.backIcon ?: Icons.Filled.Close, skin?.backLabel ?: "Back", connected && RemoteKey.BACK in caps.keys, 76.dp) {
-                        press(RemoteKey.BACK)
-                    }
-                    WideButton(skin?.homeIcon ?: Icons.Filled.Keyboard, skin?.homeLabel ?: "Home", connected && RemoteKey.HOME in caps.keys, Modifier.weight(1f).height(76.dp)) {
-                        press(RemoteKey.HOME)
-                    }
-                    RoundButton(Icons.Filled.OpenInFull, "Open full remote", enabled = true, size = 76.dp) { Haptics.click(); onOpenFull() }
+                RoundButton(skin?.backIcon ?: Icons.Filled.Close, skin?.backLabel ?: "Back", connected && RemoteKey.BACK in caps.keys, 60.dp) {
+                    press(RemoteKey.BACK)
                 }
+                WideButton(skin?.homeIcon ?: Icons.Filled.Keyboard, skin?.homeLabel ?: "Home", connected && RemoteKey.HOME in caps.keys, Modifier.weight(1f).height(60.dp)) {
+                    press(RemoteKey.HOME)
+                }
+                RoundButton(Icons.Filled.OpenInFull, "Open full remote", enabled = true, size = 60.dp) { Haptics.click(); onOpenFull() }
             }
 
             // Mute · volume down · volume up
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                RoundButton(Icons.Filled.VolumeOff, "Mute", connected && RemoteKey.MUTE in caps.keys, 64.dp) { press(RemoteKey.MUTE) }
-                WideButton(Icons.Filled.Remove, "Volume down", connected && RemoteKey.VOLUME_DOWN in caps.keys, Modifier.weight(1f).height(64.dp)) {
+                RoundButton(Icons.Filled.VolumeOff, "Mute", connected && RemoteKey.MUTE in caps.keys, 56.dp) { press(RemoteKey.MUTE) }
+                WideButton(Icons.Filled.Remove, "Volume down", connected && RemoteKey.VOLUME_DOWN in caps.keys, Modifier.weight(1f).height(56.dp)) {
                     press(RemoteKey.VOLUME_DOWN)
                 }
-                WideButton(Icons.Filled.VolumeUp, "Volume up", connected && RemoteKey.VOLUME_UP in caps.keys, Modifier.weight(1f).height(64.dp)) {
+                WideButton(Icons.Filled.VolumeUp, "Volume up", connected && RemoteKey.VOLUME_UP in caps.keys, Modifier.weight(1f).height(56.dp)) {
                     press(RemoteKey.VOLUME_UP)
                 }
             }
@@ -224,12 +215,12 @@ private fun DeviceChip(name: String, icon: ImageVector?, connected: Boolean, sta
             .clip(RoundedCornerShape(24.dp))
             .background(container)
             .clickable(onClick = onClick)
-            .padding(start = 16.dp, end = 8.dp),
+            .padding(start = 14.dp, end = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) {
             Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(8.dp))
         }
         Column {
             Text(name, color = content, style = MaterialTheme.typography.titleMedium, maxLines = 1)
@@ -238,20 +229,13 @@ private fun DeviceChip(name: String, icon: ImageVector?, connected: Boolean, sta
             }
         }
         Spacer(Modifier.width(6.dp))
-        Box(Modifier.width(1.dp).height(28.dp).background(content.copy(alpha = 0.25f)))
-        Spacer(Modifier.width(6.dp))
+        Box(Modifier.width(1.dp).height(24.dp).background(content.copy(alpha = 0.25f)))
         Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Switch TV", tint = content)
     }
 }
 
 @Composable
-private fun RoundButton(
-    icon: ImageVector,
-    label: String,
-    enabled: Boolean,
-    size: androidx.compose.ui.unit.Dp,
-    onClick: () -> Unit,
-) {
+private fun RoundButton(icon: ImageVector, label: String, enabled: Boolean, size: Dp, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .size(size)
@@ -284,4 +268,3 @@ private fun WideButton(icon: ImageVector, label: String, enabled: Boolean, modif
         )
     }
 }
-
