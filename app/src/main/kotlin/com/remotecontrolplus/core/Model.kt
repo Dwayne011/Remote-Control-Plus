@@ -32,7 +32,8 @@ data class TvDevice(
 
 /** The controls shared across every device type. */
 enum class RemoteKey {
-    POWER,
+    POWER_ON,
+    POWER_OFF,
     VOLUME_UP,
     VOLUME_DOWN,
     MUTE,
@@ -43,18 +44,24 @@ enum class RemoteKey {
     SELECT,
     BACK,
     HOME,
-    PLAY_PAUSE,
+    PLAY,
+    PAUSE,
+    PREVIOUS,
+    NEXT,
 }
 
 /** What a particular device can do, so the UI hides what would do nothing. */
 data class Capabilities(
     val keys: Set<RemoteKey>,
     val textEntry: Boolean,
-    /** Shown under the power button when it does something other than toggle power. */
-    val powerHint: String? = null,
+    /** The device reports its volume level and can be set to one, so a slider makes sense. */
+    val volumeSlider: Boolean = false,
+    /** Label for the Off button when it does something other than power off. */
+    val offLabel: String = "Off",
 ) {
     companion object {
         val ALL_KEYS: Set<RemoteKey> = RemoteKey.entries.toSet()
+        val NAVIGATION: Set<RemoteKey> = setOf(RemoteKey.UP, RemoteKey.DOWN, RemoteKey.LEFT, RemoteKey.RIGHT, RemoteKey.SELECT)
     }
 }
 

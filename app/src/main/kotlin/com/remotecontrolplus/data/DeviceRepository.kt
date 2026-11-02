@@ -24,9 +24,17 @@ class DeviceRepository(
     private val json = Json { ignoreUnknownKeys = true }
     private val devicesKey = stringPreferencesKey("devices")
     private val selectedKey = stringPreferencesKey("selected")
+    private val padModeKey = stringPreferencesKey("padMode")
 
     val devices: Flow<List<TvDevice>> = store.data.map { prefs -> decode(prefs[devicesKey]) }
     val selectedId: Flow<String?> = store.data.map { it[selectedKey] }
+
+    /** "swipe" or "dpad"; how the touch pad behaves. */
+    val padMode: Flow<String> = store.data.map { it[padModeKey] ?: "swipe" }
+
+    suspend fun setPadMode(mode: String) {
+        store.edit { it[padModeKey] = mode }
+    }
 
     suspend fun save(device: TvDevice) {
         store.edit { prefs ->

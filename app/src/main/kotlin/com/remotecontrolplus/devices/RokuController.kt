@@ -58,7 +58,8 @@ class RokuController(override val device: TvDevice) : TvController {
 
     override suspend fun sendKey(key: RemoteKey) {
         val name = when (key) {
-            RemoteKey.POWER -> "Power"
+            RemoteKey.POWER_ON -> "PowerOn"
+            RemoteKey.POWER_OFF -> "PowerOff"
             RemoteKey.VOLUME_UP -> "VolumeUp"
             RemoteKey.VOLUME_DOWN -> "VolumeDown"
             RemoteKey.MUTE -> "VolumeMute"
@@ -69,7 +70,10 @@ class RokuController(override val device: TvDevice) : TvController {
             RemoteKey.SELECT -> "Select"
             RemoteKey.BACK -> "Back"
             RemoteKey.HOME -> "Home"
-            RemoteKey.PLAY_PAUSE -> "Play"
+            // Roku has a single play/pause key.
+            RemoteKey.PLAY, RemoteKey.PAUSE -> "Play"
+            RemoteKey.PREVIOUS -> "Rev"
+            RemoteKey.NEXT -> "Fwd"
         }
         keypress(name)
     }

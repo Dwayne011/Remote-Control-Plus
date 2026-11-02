@@ -41,7 +41,10 @@ class GoogleTvController(
     @Serializable
     private data class StoredIdentity(val certificatePem: String, val privateKeyPem: String)
 
-    override val capabilities = Capabilities(keys = Capabilities.ALL_KEYS, textEntry = true)
+    override val capabilities = Capabilities(keys = Capabilities.ALL_KEYS, textEntry = true, volumeSlider = true)
+
+    private val _volume = MutableStateFlow<Float?>(null)
+    override val volume: StateFlow<Float?> = _volume.asStateFlow()
 
     private val _state = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     override val state: StateFlow<ConnectionState> = _state.asStateFlow()
@@ -73,6 +76,7 @@ class GoogleTvController(
             Diagnostics.log("googletv", "connected; TV reported ${s.device.value}")
             session = s
             watchers = scope.launch {
+                launch { s.volume.collect { v -> _volume.value = v?.fraction } }
                 launch {
                     s.disconnects.collect { reason ->
                         if (_state.value is ConnectionState.Connected) {
@@ -110,7 +114,9 @@ class GoogleTvController(
     override suspend fun sendKey(key: RemoteKey) {
         val s = session ?: throw NotConnectedException()
         val code = when (key) {
-            RemoteKey.POWER -> RemoteKeyCode.KEYCODE_POWER
+            // The TV reports whether it is on, so On/Off can share the toggle key safely.
+            RemoteKey.POWER_ON -> if (s.isOn.value) return else RemoteKeyCode.KEYCODE_POWER
+            RemoteKey.POWER_OFF -> if (!s.isOn.value) return else RemoteKeyCode.KEYCODE_POWER
             RemoteKey.VOLUME_UP -> RemoteKeyCode.KEYCODE_VOLUME_UP
             RemoteKey.VOLUME_DOWN -> RemoteKeyCode.KEYCODE_VOLUME_DOWN
             RemoteKey.MUTE -> RemoteKeyCode.KEYCODE_VOLUME_MUTE
@@ -121,9 +127,25 @@ class GoogleTvController(
             RemoteKey.SELECT -> RemoteKeyCode.KEYCODE_DPAD_CENTER
             RemoteKey.BACK -> RemoteKeyCode.KEYCODE_BACK
             RemoteKey.HOME -> RemoteKeyCode.KEYCODE_HOME
-            RemoteKey.PLAY_PAUSE -> RemoteKeyCode.KEYCODE_MEDIA_PLAY_PAUSE
+            RemoteKey.PLAY -> RemoteKeyCode.KEYCODE_MEDIA_PLAY
+            RemoteKey.PAUSE -> RemoteKeyCode.KEYCODE_MEDIA_PAUSE
+            RemoteKey.PREVIOUS -> RemoteKeyCode.KEYCODE_MEDIA_PREVIOUS
+            RemoteKey.NEXT -> RemoteKeyCode.KEYCODE_MEDIA_NEXT
         }
         s.sendKey(code)
+    }
+
+    /** No absolute volume command exists; step towards the target with key presses. */
+    override suspend fun setVolume(fraction: Float) {
+        val s = session ?: throw NotConnectedException()
+        val info = s.volume.value ?: return
+        val target = (fraction * info.max).toInt().coerceIn(0, info.max)
+        val steps = target - info.level
+        val code = if (steps > 0) RemoteKeyCode.KEYCODE_VOLUME_UP else RemoteKeyCode.KEYCODE_VOLUME_DOWN
+        repeat(kotlin.math.abs(steps).coerceAtMost(30)) {
+            s.sendKey(code)
+            kotlinx.coroutines.delay(60)
+        }
     }
 
     override suspend fun sendText(text: String) {

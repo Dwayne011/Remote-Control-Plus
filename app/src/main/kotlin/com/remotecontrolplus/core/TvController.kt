@@ -1,5 +1,6 @@
 package com.remotecontrolplus.core
 
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -13,6 +14,10 @@ interface TvController {
     val state: StateFlow<ConnectionState>
     val textField: StateFlow<TextFieldState>
 
+    /** Volume as 0..1 when the device reports it, else null. */
+    val volume: StateFlow<Float?>
+        get() = NO_VOLUME
+
     /** Connect using stored credentials. Moves [state] to Connected or PairingRequired. */
     suspend fun connect()
 
@@ -20,8 +25,22 @@ interface TvController {
 
     suspend fun sendKey(key: RemoteKey)
 
+    /**
+     * A swipe on the touch pad in one of UP/DOWN/LEFT/RIGHT. Devices with a
+     * real trackpad (Apple TV) translate it to a gesture; others treat it as
+     * the matching key.
+     */
+    suspend fun swipe(direction: RemoteKey) = sendKey(direction)
+
+    /** Set the volume to [fraction] in 0..1. Only valid when [Capabilities.volumeSlider]. */
+    suspend fun setVolume(fraction: Float) = Unit
+
     /** Type into whatever the device has focused. Only valid when [Capabilities.textEntry]. */
     suspend fun sendText(text: String)
+
+    companion object {
+        private val NO_VOLUME: StateFlow<Float?> = MutableStateFlow(null)
+    }
 }
 
 /**

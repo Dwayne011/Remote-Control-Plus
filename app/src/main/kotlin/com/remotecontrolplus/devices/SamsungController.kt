@@ -53,8 +53,6 @@ class SamsungController(
     private val json = Json { ignoreUnknownKeys = true }
     private var socket: WebSocket? = null
 
-    /** Samsung has separate play and pause keys; the shared control alternates them. */
-    private var playing = true
 
     override suspend fun connect() {
         if (token == null) {
@@ -79,13 +77,14 @@ class SamsungController(
     }
 
     override suspend fun sendKey(key: RemoteKey) {
-        if (key == RemoteKey.POWER && state.value !is ConnectionState.Connected && device.mac != null) {
-            // Off TVs are not listening; a magic packet is the only way in.
-            WakeOnLan.send(device.mac)
-            return
-        }
         val code = when (key) {
-            RemoteKey.POWER -> "KEY_POWER"
+            RemoteKey.POWER_ON -> {
+                // A TV that is already on ignores a magic packet, so this is safe either way.
+                device.mac?.let { WakeOnLan.send(it) }
+                if (state.value !is ConnectionState.Connected) return
+                "KEY_POWER"
+            }
+            RemoteKey.POWER_OFF -> "KEY_POWER"
             RemoteKey.VOLUME_UP -> "KEY_VOLUP"
             RemoteKey.VOLUME_DOWN -> "KEY_VOLDOWN"
             RemoteKey.MUTE -> "KEY_MUTE"
@@ -96,7 +95,10 @@ class SamsungController(
             RemoteKey.SELECT -> "KEY_ENTER"
             RemoteKey.BACK -> "KEY_RETURN"
             RemoteKey.HOME -> "KEY_HOME"
-            RemoteKey.PLAY_PAUSE -> (if (playing) "KEY_PAUSE" else "KEY_PLAY").also { playing = !playing }
+            RemoteKey.PLAY -> "KEY_PLAY"
+            RemoteKey.PAUSE -> "KEY_PAUSE"
+            RemoteKey.PREVIOUS -> "KEY_REWIND"
+            RemoteKey.NEXT -> "KEY_FF"
         }
         send(
             buildJsonObject {

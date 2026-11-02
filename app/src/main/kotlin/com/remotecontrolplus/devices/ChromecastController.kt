@@ -26,9 +26,10 @@ class ChromecastController(
 ) : TvController {
 
     override val capabilities = Capabilities(
-        keys = setOf(RemoteKey.POWER, RemoteKey.VOLUME_UP, RemoteKey.VOLUME_DOWN, RemoteKey.MUTE, RemoteKey.PLAY_PAUSE),
+        keys = setOf(RemoteKey.POWER_OFF, RemoteKey.VOLUME_UP, RemoteKey.VOLUME_DOWN, RemoteKey.MUTE, RemoteKey.PLAY, RemoteKey.PAUSE),
         textEntry = false,
-        powerHint = "Stop casting",
+        volumeSlider = true,
+        offLabel = "Stop casting",
     )
 
     private val _state = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
@@ -38,6 +39,8 @@ class ChromecastController(
     override val textField: StateFlow<TextFieldState> = _textField.asStateFlow()
 
     private var client: CastClient? = null
+    private val _volume = MutableStateFlow<Float?>(null)
+    override val volume: StateFlow<Float?> = _volume.asStateFlow()
     private var watcher: Job? = null
 
     override suspend fun connect() {
@@ -47,6 +50,7 @@ class ChromecastController(
             c.connect(scope)
             client = c
             watcher = scope.launch {
+                launch { c.receiverStatus.collect { st -> _volume.value = st?.volumeLevel?.toFloat() } }
                 c.disconnects.collect { reason ->
                     if (_state.value is ConnectionState.Connected) _state.value = ConnectionState.Error(reason)
                 }
@@ -68,13 +72,19 @@ class ChromecastController(
     override suspend fun sendKey(key: RemoteKey) {
         val c = client ?: throw NotConnectedException()
         when (key) {
-            RemoteKey.POWER -> c.stopApplication()
+            RemoteKey.POWER_OFF -> c.stopApplication()
             RemoteKey.VOLUME_UP -> c.adjustVolume(VOLUME_STEP)
             RemoteKey.VOLUME_DOWN -> c.adjustVolume(-VOLUME_STEP)
             RemoteKey.MUTE -> c.toggleMute()
-            RemoteKey.PLAY_PAUSE -> c.playPause()
+            RemoteKey.PLAY -> c.play()
+            RemoteKey.PAUSE -> c.pause()
             else -> Unit
         }
+    }
+
+    override suspend fun setVolume(fraction: Float) {
+        val c = client ?: throw NotConnectedException()
+        c.setVolume(fraction.toDouble())
     }
 
     override suspend fun sendText(text: String) = Unit

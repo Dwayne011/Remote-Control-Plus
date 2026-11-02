@@ -22,6 +22,7 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         Diagnostics.log("app", "activity in foreground")
+        viewModel.onForeground()
     }
 
     override fun onStop() {

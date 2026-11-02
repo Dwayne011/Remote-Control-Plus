@@ -47,7 +47,10 @@ class LgController(
     private val appName: String = "Remote Control Plus",
 ) : TvController, Pairable {
 
-    override val capabilities = Capabilities(keys = Capabilities.ALL_KEYS, textEntry = true)
+    override val capabilities = Capabilities(keys = Capabilities.ALL_KEYS, textEntry = true, volumeSlider = true)
+
+    private val _volume = MutableStateFlow<Float?>(null)
+    override val volume: StateFlow<Float?> = _volume.asStateFlow()
 
     private val _state = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     override val state: StateFlow<ConnectionState> = _state.asStateFlow()
@@ -60,7 +63,6 @@ class LgController(
     private var pointerSocket: WebSocket? = null
     private val requestId = AtomicInteger(1)
     private val pending = ConcurrentHashMap<String, CompletableDeferred<JsonObject>>()
-    private var playing = true
 
     override suspend fun connect() {
         if (clientKey == null) {
@@ -70,6 +72,7 @@ class LgController(
         _state.value = ConnectionState.Connecting
         try {
             register(clientKey)
+            refreshVolume()
             _state.value = ConnectionState.Connected
         } catch (e: PairingException) {
             _state.value = ConnectionState.PairingRequired
@@ -88,14 +91,14 @@ class LgController(
     }
 
     override suspend fun sendKey(key: RemoteKey) {
-        if (key == RemoteKey.POWER && state.value !is ConnectionState.Connected && device.mac != null) {
-            WakeOnLan.send(device.mac)
-            return
-        }
         when (key) {
-            RemoteKey.POWER -> request("ssap://system/turnOff")
-            RemoteKey.VOLUME_UP -> request("ssap://audio/volumeUp")
-            RemoteKey.VOLUME_DOWN -> request("ssap://audio/volumeDown")
+            RemoteKey.POWER_ON -> {
+                device.mac?.let { WakeOnLan.send(it) }
+                return
+            }
+            RemoteKey.POWER_OFF -> request("ssap://system/turnOff")
+            RemoteKey.VOLUME_UP -> { request("ssap://audio/volumeUp"); refreshVolume() }
+            RemoteKey.VOLUME_DOWN -> { request("ssap://audio/volumeDown"); refreshVolume() }
             RemoteKey.MUTE -> {
                 val status = request("ssap://audio/getStatus")
                 val muted = status["payload"]?.jsonObject?.get("mute")?.jsonPrimitive?.content == "true"
@@ -108,11 +111,23 @@ class LgController(
             RemoteKey.SELECT -> pointerButton("ENTER")
             RemoteKey.BACK -> pointerButton("BACK")
             RemoteKey.HOME -> pointerButton("HOME")
-            RemoteKey.PLAY_PAUSE -> {
-                request(if (playing) "ssap://media.controls/pause" else "ssap://media.controls/play")
-                playing = !playing
-            }
+            RemoteKey.PLAY -> request("ssap://media.controls/play")
+            RemoteKey.PAUSE -> request("ssap://media.controls/pause")
+            RemoteKey.PREVIOUS -> request("ssap://media.controls/rewind")
+            RemoteKey.NEXT -> request("ssap://media.controls/fastForward")
         }
+    }
+
+    override suspend fun setVolume(fraction: Float) {
+        request("ssap://audio/setVolume", buildJsonObject { put("volume", (fraction * 100).toInt().coerceIn(0, 100)) })
+        refreshVolume()
+    }
+
+    /** webOS reports volume either at the top level or under volumeStatus, depending on version. */
+    private suspend fun refreshVolume() {
+        val payload = runCatching { request("ssap://audio/getVolume")["payload"]?.jsonObject }.getOrNull() ?: return
+        val level = (payload["volumeStatus"]?.jsonObject ?: payload)["volume"]?.jsonPrimitive?.content?.toIntOrNull()
+        if (level != null) _volume.value = level / 100f
     }
 
     override suspend fun sendText(text: String) {

@@ -16,6 +16,7 @@ import dev.atvremote.protocol.companion.Button
 import dev.atvremote.protocol.companion.CompanionClient
 import dev.atvremote.protocol.hap.Credentials
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,7 +39,7 @@ class AppleTvController(
         // Apple TV has no mute key; volume routes over HDMI-CEC when the TV supports it.
         keys = Capabilities.ALL_KEYS - RemoteKey.MUTE,
         textEntry = true,
-        powerHint = "Sleep / wake",
+        volumeSlider = true,
     )
 
     private val _state = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
@@ -48,7 +49,9 @@ class AppleTvController(
     override val textField: StateFlow<TextFieldState> = _textField.asStateFlow()
 
     private var remote: AppleTvRemote? = null
-    private var asleep = false
+    @Volatile private var volumeSupported = false
+    private val _volume = MutableStateFlow<Float?>(null)
+    override val volume: StateFlow<Float?> = _volume.asStateFlow()
 
     override suspend fun connect() {
         val credentials = serializedCredentials?.let { runCatching { Credentials.parse(it) }.getOrNull() }
@@ -65,6 +68,11 @@ class AppleTvController(
                 if (_state.value is ConnectionState.Connected) {
                     _state.value = ConnectionState.Error(cause?.message ?: "Connection lost")
                 }
+            }
+            r.onCapabilities = { caps ->
+                volumeSupported = caps.volume
+                Diagnostics.log("appletv", "device capabilities: volume=${caps.volume} play=${caps.play}")
+                if (!caps.volume) _volume.value = null else scope.launch { refreshVolume() }
             }
             r.onTextFocus = { session ->
                 _textField.value = TextFieldState(
@@ -94,12 +102,10 @@ class AppleTvController(
     override suspend fun sendKey(key: RemoteKey) {
         val r = remote ?: throw NotConnectedException()
         when (key) {
-            RemoteKey.POWER -> {
-                r.press(if (asleep) Button.WAKE else Button.SLEEP)
-                asleep = !asleep
-            }
-            RemoteKey.VOLUME_UP -> r.volumeUp()
-            RemoteKey.VOLUME_DOWN -> r.volumeDown()
+            RemoteKey.POWER_ON -> r.wake()
+            RemoteKey.POWER_OFF -> r.sleep()
+            RemoteKey.VOLUME_UP -> { r.volumeUp(); refreshVolume() }
+            RemoteKey.VOLUME_DOWN -> { r.volumeDown(); refreshVolume() }
             RemoteKey.MUTE -> Unit
             RemoteKey.UP -> r.up()
             RemoteKey.DOWN -> r.down()
@@ -108,8 +114,36 @@ class AppleTvController(
             RemoteKey.SELECT -> r.select()
             RemoteKey.BACK -> r.menu()
             RemoteKey.HOME -> r.home()
-            RemoteKey.PLAY_PAUSE -> r.playPause()
+            RemoteKey.PLAY -> r.play()
+            RemoteKey.PAUSE -> r.pause()
+            RemoteKey.PREVIOUS -> r.previousTrack()
+            RemoteKey.NEXT -> r.nextTrack()
         }
+    }
+
+    /** A swipe on the pad becomes a swipe on the Siri Remote's virtual trackpad. */
+    override suspend fun swipe(direction: RemoteKey) {
+        val r = remote ?: throw NotConnectedException()
+        val (from, to) = when (direction) {
+            RemoteKey.UP -> (500 to 700) to (500 to 300)
+            RemoteKey.DOWN -> (500 to 300) to (500 to 700)
+            RemoteKey.LEFT -> (700 to 500) to (300 to 500)
+            RemoteKey.RIGHT -> (300 to 500) to (700 to 500)
+            else -> return sendKey(direction)
+        }
+        r.swipe(from.first, from.second, to.first, to.second, durationMs = 120)
+    }
+
+    override suspend fun setVolume(fraction: Float) {
+        val r = remote ?: throw NotConnectedException()
+        r.setVolume(fraction.toDouble())
+        refreshVolume()
+    }
+
+    private suspend fun refreshVolume() {
+        val r = remote ?: return
+        if (!volumeSupported) return
+        _volume.value = runCatching { r.getVolume()?.toFloat() }.getOrNull()
     }
 
     override suspend fun sendText(text: String) {

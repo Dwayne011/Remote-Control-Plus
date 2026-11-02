@@ -69,6 +69,43 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         .flatMapLatest { it?.textField ?: flowOf(TextFieldState(false, "")) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, TextFieldState(false, ""))
 
+
+    val volume: StateFlow<Float?> = _controller
+        .flatMapLatest { it?.volume ?: flowOf(null) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val padMode: StateFlow<String> = repository.padMode
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "swipe")
+
+    fun setPadMode(mode: String) = viewModelScope.launch { repository.setPadMode(mode) }
+
+    fun swipe(direction: RemoteKey) = viewModelScope.launch {
+        val c = _controller.value ?: return@launch
+        Diagnostics.log("app", "swipe $direction on ${c.device.name}")
+        runCatching { withContext(Dispatchers.IO) { c.swipe(direction) } }.onFailure {
+            Diagnostics.log("app", "swipe failed", it)
+            _messages.tryEmit(it.message ?: "Command failed")
+        }
+    }
+
+    fun setVolume(fraction: Float) = viewModelScope.launch {
+        val c = _controller.value ?: return@launch
+        runCatching { withContext(Dispatchers.IO) { c.setVolume(fraction) } }.onFailure {
+            Diagnostics.log("app", "set volume failed", it)
+            _messages.tryEmit(it.message ?: "Could not set volume")
+        }
+    }
+
+    /** Called when the app returns to the foreground: pick the connection back up if it dropped. */
+    fun onForeground() {
+        val state = connectionState.value
+        if (_controller.value != null && state !is ConnectionState.Connected && state !is ConnectionState.Connecting &&
+            state !is ConnectionState.PairingRequired
+        ) {
+            Diagnostics.log("app", "foreground with state $state; reconnecting")
+            reconnect()
+        }
+    }
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val messages: SharedFlow<String> = _messages.asSharedFlow()
 

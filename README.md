@@ -37,6 +37,15 @@ Unit tests, including the protocol test vectors for Apple TV and Android TV:
 The GitHub Actions workflow in `.github/workflows/android.yml` runs the tests and uploads a
 debug APK on every push.
 
+## Layout
+
+The remote follows the Google Home TV remote: a large touch pad (Swipe mode flicks to move and
+taps to select; D-pad mode has buttons), Back and Home, On and Off, previous / play / pause / next,
+mute with a volume slider on devices that report their level (LG, Apple TV, Google TV, Chromecast)
+or plus and minus on those that do not (Samsung, Roku), and a Keyboard row. Devices only show
+the controls they support. On Apple TV a swipe is sent as a swipe on the Siri Remote trackpad.
+The connection is picked up again automatically when the app returns to the foreground.
+
 ## Using it
 
 1. Open the app and tap **Find TVs**. It scans with mDNS (Apple TV, Google TV, Chromecast) and
@@ -71,8 +80,6 @@ error with its stack trace. **Share** sends it as text. Tokens and keys are reda
 
 - Apple TV and Google TV protocol code is tested against upstream byte-level vectors, but the
   live connection has only been verified by the upstream authors on their own devices.
-- Samsung, LG, Apple TV play/pause: these devices have separate play and pause commands, so
-  the shared button alternates between them.
 - Apple TV volume only works when the Apple TV routes volume over HDMI-CEC.
 - Classic Chromecast dongles have no on-screen UI to navigate, so only media controls are shown.
 - Devices on another subnet or with discovery blocked will not be found. There is no manual IP
