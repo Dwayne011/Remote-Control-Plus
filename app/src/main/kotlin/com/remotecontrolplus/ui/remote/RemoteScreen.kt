@@ -27,7 +27,6 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -36,8 +35,6 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -54,7 +51,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -117,9 +113,20 @@ fun RemoteScreen(
                     if (device == null) {
                         Text("Remote Control Plus")
                     } else {
-                        TextButton(onClick = { switcherOpen = true }) {
-                            Text(device.name, style = MaterialTheme.typography.titleLarge, maxLines = 1)
-                            Icon(Icons.Filled.ArrowDropDown, contentDescription = "Switch TV")
+                        // Name on top, "<type> · <state>" with a status dot underneath;
+                        // the whole thing opens the switcher.
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { switcherOpen = true }
+                                .padding(horizontal = 12.dp, vertical = 2.dp),
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(device.name, style = MaterialTheme.typography.titleLarge, maxLines = 1)
+                                Icon(Icons.Filled.ArrowDropDown, contentDescription = "Switch TV")
+                            }
+                            StatusLine(state = connection, deviceLabel = device.type.label)
                         }
                     }
                 },
@@ -156,19 +163,21 @@ fun RemoteScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    ConnectionBanner(
-                        state = connection,
-                        deviceLabel = device.type.label,
-                        onPair = { viewModel.startPairing(device) },
-                        onRetry = { viewModel.reconnect() },
-                    )
-                    if (caps.keys.any { it in Capabilities.NAVIGATION }) {
-                        PadModeToggle(mode = padMode, onChange = viewModel::setPadMode)
+                when (connection) {
+                    ConnectionState.PairingRequired -> FilledTonalButton(
+                        onClick = { viewModel.startPairing(device) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Pair with this ${device.type.label}") }
+                    is ConnectionState.Error, ConnectionState.Disconnected -> FilledTonalButton(
+                        onClick = { viewModel.reconnect() },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Filled.Refresh, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Reconnect")
+                    }
+                    else -> if (caps.keys.any { it in Capabilities.NAVIGATION }) {
+                        PadModeToggle(mode = padMode, onChange = viewModel::setPadMode, modifier = Modifier.fillMaxWidth())
                     }
                 }
 
@@ -307,44 +316,34 @@ private fun EmptyState(onAddDevice: () -> Unit, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun ConnectionBanner(
-    state: ConnectionState,
-    deviceLabel: String,
-    onPair: () -> Unit,
-    onRetry: () -> Unit,
-) {
-    when (state) {
-        ConnectionState.Connected -> AssistChip(
-            onClick = {},
-            label = { Text("Connected · $deviceLabel") },
-            leadingIcon = { Icon(Icons.Filled.Link, contentDescription = null, Modifier.size(18.dp)) },
-            colors = AssistChipDefaults.assistChipColors(
-                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                leadingIconContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-            ),
+private fun StatusLine(state: ConnectionState, deviceLabel: String) {
+    val (dot, text) = when (state) {
+        ConnectionState.Connected -> MaterialTheme.colorScheme.primary to "Connected"
+        ConnectionState.Connecting -> MaterialTheme.colorScheme.tertiary to "Connecting…"
+        ConnectionState.PairingRequired -> MaterialTheme.colorScheme.tertiary to "Not paired"
+        ConnectionState.Disconnected -> MaterialTheme.colorScheme.outline to "Not connected"
+        is ConnectionState.Error -> MaterialTheme.colorScheme.error to state.message
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(dot),
         )
-        ConnectionState.Connecting -> AssistChip(onClick = {}, label = { Text("Connecting…") })
-        ConnectionState.Disconnected -> AssistChip(onClick = onRetry, label = { Text("Not connected · tap to retry") })
-        ConnectionState.PairingRequired -> FilledTonalButton(onClick = onPair) {
-            Text("Pair with this $deviceLabel")
-        }
-        is ConnectionState.Error -> AssistChip(
-            onClick = onRetry,
-            label = { Text(state.message, maxLines = 1) },
-            leadingIcon = { Icon(Icons.Filled.Refresh, contentDescription = null, Modifier.size(18.dp)) },
-            colors = AssistChipDefaults.assistChipColors(
-                containerColor = MaterialTheme.colorScheme.errorContainer,
-                labelColor = MaterialTheme.colorScheme.onErrorContainer,
-                leadingIconContentColor = MaterialTheme.colorScheme.onErrorContainer,
-            ),
+        Spacer(Modifier.width(6.dp))
+        Text(
+            "$deviceLabel · $text",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
         )
     }
 }
 
 @Composable
-private fun PadModeToggle(mode: String, onChange: (String) -> Unit) {
-    SingleChoiceSegmentedButtonRow {
+private fun PadModeToggle(mode: String, onChange: (String) -> Unit, modifier: Modifier = Modifier) {
+    SingleChoiceSegmentedButtonRow(modifier = modifier) {
         SegmentedButton(
             selected = mode == "swipe",
             onClick = { onChange("swipe") },
