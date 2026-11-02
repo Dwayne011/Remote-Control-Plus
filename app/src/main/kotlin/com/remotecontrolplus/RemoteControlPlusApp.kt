@@ -5,6 +5,7 @@ import com.remotecontrolplus.core.Diagnostics
 import com.remotecontrolplus.core.Haptics
 import com.remotecontrolplus.data.CredentialStore
 import com.remotecontrolplus.data.DeviceRepository
+import com.remotecontrolplus.data.RemoteManager
 import com.remotecontrolplus.devices.ControllerFactory
 import com.remotecontrolplus.discovery.DeviceDiscovery
 import com.remotecontrolplus.discovery.NsdDiscovery
@@ -30,4 +31,5 @@ class RemoteControlPlusApp : Application() {
     val nsd by lazy { NsdDiscovery(this) }
     val discovery by lazy { DeviceDiscovery(nsd, SsdpDiscovery(this), SubnetProbe(this)) }
     val controllers by lazy { ControllerFactory(appScope, nsd) }
+    val remote by lazy { RemoteManager(appScope, repository, credentials, controllers) }
 }

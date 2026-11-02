@@ -49,7 +49,8 @@ The connection is picked up again automatically when the app returns to the fore
 ## Quick Settings tile
 
 Add the **Remote** tile from the device switcher ("Add to Quick Settings") or from the
-notification shade's Edit tiles screen. It shows the selected TV and opens the remote.
+notification shade's Edit tiles screen. It shows the selected TV; tapping it opens a compact remote over the shade (D-pad, Back/Home,
+power, volume, play/pause) with a button to the full app.
 
 ## Using it
 

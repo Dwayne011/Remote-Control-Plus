@@ -6,9 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.remotecontrolplus.RemoteControlPlusApp
 import com.remotecontrolplus.core.Capabilities
 import com.remotecontrolplus.core.ConnectionState
-import com.remotecontrolplus.core.DeviceType
 import com.remotecontrolplus.core.Diagnostics
-import com.remotecontrolplus.core.Haptics
 import com.remotecontrolplus.core.Pairable
 import com.remotecontrolplus.core.PairingHandle
 import com.remotecontrolplus.core.RemoteKey
@@ -16,20 +14,11 @@ import com.remotecontrolplus.core.TextFieldState
 import com.remotecontrolplus.core.TvController
 import com.remotecontrolplus.core.TvDevice
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -42,98 +31,41 @@ sealed interface PairingUiState {
     data object Done : PairingUiState
 }
 
-@OptIn(ExperimentalCoroutinesApi::class)
+/**
+ * Screen-level state: discovery and pairing live here; the live connection
+ * is the app-wide [com.remotecontrolplus.data.RemoteManager], shared with
+ * the Quick Settings mini remote.
+ */
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val app = application as RemoteControlPlusApp
     private val repository = app.repository
     private val credentials = app.credentials
+    private val remote = app.remote
 
-    val devices: StateFlow<List<TvDevice>> = repository.devices
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val devices: StateFlow<List<TvDevice>> get() = remote.devices
+    val selected: StateFlow<TvDevice?> get() = remote.selected
+    val controller: StateFlow<TvController?> get() = remote.controller
+    val connectionState: StateFlow<ConnectionState> get() = remote.connectionState
+    val capabilities: StateFlow<Capabilities?> get() = remote.capabilities
+    val textField: StateFlow<TextFieldState> get() = remote.textField
+    val volume: StateFlow<Float?> get() = remote.volume
+    val padMode: StateFlow<String> get() = remote.padMode
+    val waking: StateFlow<Boolean> get() = remote.waking
+    val powerState: StateFlow<Boolean?> get() = remote.powerState
+    val messages: SharedFlow<String> get() = remote.messages
 
-    val selected: StateFlow<TvDevice?> = combine(repository.devices, repository.selectedId) { list, id ->
-        list.firstOrNull { it.id == id } ?: list.firstOrNull()
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    fun setPadMode(mode: String) = remote.setPadMode(mode)
+    fun swipe(direction: RemoteKey) = remote.swipe(direction)
+    fun setVolume(fraction: Float) = remote.setVolume(fraction)
+    fun selectDevice(id: String) = remote.selectDevice(id)
+    fun forgetDevice(id: String) = remote.forgetDevice(id)
+    fun reconnect() = remote.reconnect()
+    fun press(key: RemoteKey) = remote.press(key)
+    fun sendText(text: String) = remote.sendText(text)
 
-    private val _controller = MutableStateFlow<TvController?>(null)
-    val controller: StateFlow<TvController?> = _controller.asStateFlow()
-
-    val connectionState: StateFlow<ConnectionState> = _controller
-        .flatMapLatest { it?.state ?: flowOf(ConnectionState.Disconnected) }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, ConnectionState.Disconnected)
-
-    val capabilities: StateFlow<Capabilities?> = _controller
-        .flatMapLatest { flowOf(it?.capabilities) }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
-
-    val textField: StateFlow<TextFieldState> = _controller
-        .flatMapLatest { it?.textField ?: flowOf(TextFieldState(false, "")) }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, TextFieldState(false, ""))
-
-
-    val volume: StateFlow<Float?> = _controller
-        .flatMapLatest { it?.volume ?: flowOf(null) }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
-
-    val padMode: StateFlow<String> = repository.padMode
-        .stateIn(viewModelScope, SharingStarted.Eagerly, "swipe")
-
-    fun setPadMode(mode: String) = viewModelScope.launch {
-        Haptics.tick()
-        repository.setPadMode(mode)
-    }
-
-    fun swipe(direction: RemoteKey) = viewModelScope.launch {
-        val c = _controller.value ?: return@launch
-        Haptics.tick()
-        Diagnostics.log("app", "swipe $direction on ${c.device.name}")
-        runCatching { withContext(Dispatchers.IO) { c.swipe(direction) } }.onFailure {
-            Diagnostics.log("app", "swipe failed", it)
-            _messages.tryEmit(it.message ?: "Command failed")
-        }
-    }
-
-    fun setVolume(fraction: Float) = viewModelScope.launch {
-        Haptics.tick()
-        val c = _controller.value ?: return@launch
-        runCatching { withContext(Dispatchers.IO) { c.setVolume(fraction) } }.onFailure {
-            Diagnostics.log("app", "set volume failed", it)
-            _messages.tryEmit(it.message ?: "Could not set volume")
-        }
-    }
-
-    /** Called when the app returns to the foreground: pick the connection back up if it dropped. */
-    fun onForeground() {
-        val state = connectionState.value
-        if (_controller.value != null && state !is ConnectionState.Connected && state !is ConnectionState.Connecting &&
-            state !is ConnectionState.PairingRequired
-        ) {
-            Diagnostics.log("app", "foreground with state $state; reconnecting")
-            reconnect()
-        }
-    }
-
-    private val _waking = MutableStateFlow(false)
-    /** True while the app is retrying the connection after sending a wake packet. */
-    val waking: StateFlow<Boolean> = _waking.asStateFlow()
-
-    /**
-     * Whether the selected TV is on. Samsung and LG only answer when they are
-     * on, so connection state is the answer; Google TV reports it; others are unknown.
-     */
-    val powerState: StateFlow<Boolean?> = combine(
-        _controller.flatMapLatest { it?.powerState ?: flowOf(null) },
-        connectionState,
-        selected,
-    ) { reported, connection, device ->
-        when (device?.type) {
-            DeviceType.SAMSUNG, DeviceType.LG -> connection is ConnectionState.Connected
-            else -> reported
-        }
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
-    private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 8)
-    val messages: SharedFlow<String> = _messages.asSharedFlow()
+    /** Called when the app returns to the foreground. */
+    fun onForeground() = remote.ensureConnected("foreground")
 
     // ------------------------------------------------------------ discovery
 
@@ -158,84 +90,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         viewModelScope.launch {
-            selected.distinctUntilChanged { a, b -> a?.id == b?.id }.collect { device ->
-                _controller.value?.disconnect()
-                if (device != null) {
-                    Diagnostics.log("app", "selected ${device.type.label} '${device.name}' (${device.host}:${device.port}) credential=${Diagnostics.redact(credentials.get(device.id))} mac=${device.mac ?: "unknown"}")
-                }
-                _controller.value = device?.let { app.controllers.create(it, credentials.get(it.id)) }
-                _controller.value?.let { c -> withContext(Dispatchers.IO) { c.connect() } }
-            }
-        }
-        viewModelScope.launch {
-            connectionState.collect { Diagnostics.log("app", "connection state: $it") }
-        }
-        viewModelScope.launch {
             pairing.collect { if (it != PairingUiState.Idle) Diagnostics.log("app", "pairing state: $it") }
-        }
-    }
-
-    // ------------------------------------------------------------- actions
-
-    fun selectDevice(id: String) = viewModelScope.launch {
-        Haptics.click()
-        repository.select(id)
-    }
-
-    fun forgetDevice(id: String) = viewModelScope.launch {
-        if (selected.value?.id == id) {
-            _controller.value?.disconnect()
-            _controller.value = null
-        }
-        repository.forget(id)
-    }
-
-    fun reconnect() = viewModelScope.launch {
-        val device = selected.value ?: return@launch
-        _controller.value?.disconnect()
-        _controller.value = app.controllers.create(device, credentials.get(device.id))
-        _controller.value?.let { c -> withContext(Dispatchers.IO) { c.connect() } }
-    }
-
-    fun press(key: RemoteKey) = viewModelScope.launch {
-        val c = _controller.value ?: return@launch
-        Haptics.click()
-        Diagnostics.log("app", "press $key on ${c.device.name}")
-        runCatching { withContext(Dispatchers.IO) { c.sendKey(key) } }.onFailure {
-            Diagnostics.log("app", "$key failed", it)
-            _messages.tryEmit(it.message ?: "Command failed")
-        }
-        // A TV woken from standby takes a while to boot; keep trying to connect for a bit.
-        if (key == RemoteKey.POWER_ON && connectionState.value !is ConnectionState.Connected) {
-            if (c.device.mac == null) {
-                _messages.tryEmit("No MAC address known for this TV, so it cannot be woken over the network")
-                return@launch
-            }
-            _messages.tryEmit("Wake packet sent to ${c.device.name}")
-            _waking.value = true
-            try {
-                for (delayMs in listOf(5_000L, 7_000L, 8_000L, 10_000L)) {
-                    kotlinx.coroutines.delay(delayMs)
-                    if (connectionState.value is ConnectionState.Connected) return@launch
-                    if (_controller.value?.device?.id != c.device.id) return@launch
-                    Diagnostics.log("app", "retrying connection after wake")
-                    reconnect().join()
-                }
-                if (connectionState.value !is ConnectionState.Connected) {
-                    _messages.tryEmit("${c.device.name} did not come online. Check Power On with Mobile is enabled on the TV.")
-                }
-            } finally {
-                _waking.value = false
-            }
-        }
-    }
-
-    fun sendText(text: String) = viewModelScope.launch {
-        val c = _controller.value ?: return@launch
-        Diagnostics.log("app", "send ${text.length} chars of text to ${c.device.name}")
-        runCatching { withContext(Dispatchers.IO) { c.sendText(text) } }.onFailure {
-            Diagnostics.log("app", "text failed", it)
-            _messages.tryEmit(it.message ?: "Could not send text")
         }
     }
 
@@ -263,12 +118,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             startPairing(device)
         } else {
             repository.select(device.id)
-            _messages.tryEmit("${device.name} added")
+            remote.message("${device.name} added")
         }
     }
 
     fun startPairing(device: TvDevice) = viewModelScope.launch {
-        if (_pairingDevice.value?.id == device.id && _pairing.value !is PairingUiState.Idle && _pairing.value !is PairingUiState.Failed && _pairing.value != PairingUiState.Done) {
+        if (_pairingDevice.value?.id == device.id && _pairing.value !is PairingUiState.Idle &&
+            _pairing.value !is PairingUiState.Failed && _pairing.value != PairingUiState.Done
+        ) {
             Diagnostics.log("app", "pairing already in progress for ${device.name}; ignoring second start")
             return@launch
         }
@@ -317,7 +174,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             pairingHandle = null
             repository.select(device.id)
             // The selection may not change when re-pairing the current device.
-            if (selected.value?.id == device.id) reconnect()
+            if (selected.value?.id == device.id) remote.reconnect()
         } catch (e: Exception) {
             val message = e.message ?: "Pairing failed"
             _pairing.value = when (val s = _pairing.value) {
@@ -341,7 +198,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
-        _controller.value?.disconnect()
         pairingController?.disconnect()
     }
 }
