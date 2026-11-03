@@ -187,6 +187,7 @@ fun RemoteScreen(
                             enabled = connected,
                             onKey = viewModel::press,
                             onSwipe = viewModel::swipe,
+                            onTap = { viewModel.press(it, haptic = false) },
                             modifier = Modifier
                                 .fillMaxHeight()
                                 .aspectRatio(1f, matchHeightConstraintsFirst = true),

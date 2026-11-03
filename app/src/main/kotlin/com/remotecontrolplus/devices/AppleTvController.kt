@@ -16,6 +16,7 @@ import dev.atvremote.protocol.companion.Button
 import dev.atvremote.protocol.companion.CompanionClient
 import dev.atvremote.protocol.hap.Credentials
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -62,41 +63,38 @@ class AppleTvController(
             return
         }
         _state.value = ConnectionState.Connecting
-        // The Companion port moves across Apple TV reboots. Prefer the one the
-        // device is advertising now; fall back to the last port that worked.
-        val resolved = portResolver(device, 6000)
-        val first = resolved ?: cachedPort(device) ?: device.port
-        try {
-            attempt(credentials, first)
-            return
-        } catch (e: dev.atvremote.protocol.companion.PairingException) {
-            Diagnostics.log("appletv", "credentials rejected; pairing required", e)
-            _state.value = ConnectionState.PairingRequired
-            return
-        } catch (e: Exception) {
-            Diagnostics.log("appletv", "connect to port $first failed", e)
-            remote?.close()
-            remote = null
+        // A sleeping Apple TV takes several seconds to wake when contacted
+        // over the network, and its Companion port moves across reboots. So:
+        // look the port up fresh each attempt (falling back to the last port
+        // that worked), and keep trying for about 30 seconds before giving up.
+        val lookupTimeouts = listOf(4_000L, 6_000L, 6_000L, 8_000L)
+        var lastError: Exception? = null
+        for ((index, lookupTimeout) in lookupTimeouts.withIndex()) {
+            if (index > 0) {
+                Diagnostics.log("appletv", "attempt ${index + 1} of ${lookupTimeouts.size}; the Apple TV may be waking up")
+                delay(1_500)
+            }
+            val port = portResolver(device, lookupTimeout) ?: cachedPort(device) ?: device.port
+            try {
+                attempt(credentials, port)
+                return
+            } catch (e: dev.atvremote.protocol.companion.PairingException) {
+                Diagnostics.log("appletv", "credentials rejected; pairing required", e)
+                _state.value = ConnectionState.PairingRequired
+                return
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Diagnostics.log("appletv", "connect to port $port failed", e)
+                remote?.close()
+                remote = null
+                lastError = e
+            }
         }
-        // One retry with a fresh, longer lookup, so a stale port or a slow
-        // first mDNS answer does not need a manual Reconnect.
-        val retryPort = portResolver(device, 10_000)
-        if (retryPort == null || retryPort == first) {
-            _state.value = ConnectionState.Error("Apple TV not reachable. Is it asleep or off the network?")
-            return
-        }
-        try {
-            Diagnostics.log("appletv", "retrying on freshly advertised port $retryPort")
-            attempt(credentials, retryPort)
-        } catch (e: dev.atvremote.protocol.companion.PairingException) {
-            Diagnostics.log("appletv", "credentials rejected; pairing required", e)
-            _state.value = ConnectionState.PairingRequired
-        } catch (e: Exception) {
-            Diagnostics.log("appletv", "retry failed", e)
-            remote?.close()
-            remote = null
-            _state.value = ConnectionState.Error(e.message ?: "Could not connect")
-        }
+        _state.value = ConnectionState.Error(
+            if (lastError is java.net.SocketTimeoutException) "Apple TV not reachable. Is it on the same Wi-Fi?"
+            else lastError?.message ?: "Could not connect",
+        )
     }
 
     private suspend fun attempt(credentials: Credentials, port: Int) {

@@ -152,9 +152,9 @@ class RemoteManager(
         }
     }
 
-    fun press(key: RemoteKey) = scope.launch {
+    fun press(key: RemoteKey, haptic: Boolean = true) = scope.launch {
         val c = _controller.value ?: return@launch
-        Haptics.click()
+        if (haptic) Haptics.click()
         Diagnostics.log("app", "press $key on ${c.device.name}")
         runCatching { withContext(Dispatchers.IO) { c.sendKey(key) } }.onFailure {
             Diagnostics.log("app", "$key failed", it)
@@ -187,7 +187,6 @@ class RemoteManager(
 
     fun swipe(direction: RemoteKey) = scope.launch {
         val c = _controller.value ?: return@launch
-        Haptics.tick()
         Diagnostics.log("app", "swipe $direction on ${c.device.name}")
         runCatching { withContext(Dispatchers.IO) { c.swipe(direction) } }.onFailure {
             Diagnostics.log("app", "swipe failed", it)

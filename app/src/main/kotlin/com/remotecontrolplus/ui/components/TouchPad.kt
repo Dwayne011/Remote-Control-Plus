@@ -33,7 +33,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
-import com.remotecontrolplus.core.Haptics
 import com.remotecontrolplus.core.RemoteKey
 import kotlin.math.abs
 
@@ -64,6 +63,8 @@ fun TouchPad(
     enabled: Boolean,
     onKey: (RemoteKey) -> Unit,
     onSwipe: (RemoteKey) -> Unit,
+    /** Tap on the swipe surface; defaults to [onKey]. */
+    onTap: (RemoteKey) -> Unit = onKey,
     modifier: Modifier = Modifier,
     showHint: Boolean = false,
 ) {
@@ -73,8 +74,7 @@ fun TouchPad(
         Modifier
             .pointerInput(Unit) {
                 detectTapGestures(onTap = {
-                    Haptics.click()
-                    onKey(RemoteKey.SELECT)
+                    onTap(RemoteKey.SELECT)
                 })
             }
             .pointerInput(Unit) {
@@ -93,7 +93,6 @@ fun TouchPad(
                             else -> if (total.y > 0) RemoteKey.DOWN else RemoteKey.UP
                         }
                         if (direction != null) {
-                            Haptics.click()
                             onSwipe(direction)
                         }
                     },
