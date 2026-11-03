@@ -9,6 +9,9 @@ import com.remotecontrolplus.core.RemoteKey
 import com.remotecontrolplus.core.TextFieldState
 import com.remotecontrolplus.core.TvController
 import com.remotecontrolplus.core.TvDevice
+import com.remotecontrolplus.core.HoldableAssistant
+import com.remotecontrolplus.core.VoiceCapable
+import com.remotecontrolplus.core.VoiceRecorder
 import com.remotecontrolplus.devices.ControllerFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -204,6 +207,86 @@ class RemoteManager(
         }
     }
 
+
+    // ------------------------------------------------------------ assistant
+
+    private val _listening = MutableStateFlow(false)
+    /** True while the phone microphone is streaming to the TV, or Siri is held. */
+    val listening: StateFlow<Boolean> = _listening.asStateFlow()
+
+    private var assistantJob: Job? = null
+
+    /**
+     * Assistant button pressed. With [micAllowed], a Google TV gets the phone
+     * microphone streamed until [assistantReleased]; an Apple TV has Siri held
+     * down; anything else just gets its assistant key.
+     */
+    fun assistantPressed(micAllowed: Boolean) {
+        val c = _controller.value ?: return
+        Haptics.click()
+        assistantJob?.cancel()
+        assistantJob = scope.launch {
+            when {
+                c is VoiceCapable && micAllowed -> streamVoice(c)
+                c is HoldableAssistant -> runCatching {
+                    withContext(Dispatchers.IO) { c.assistantDown() }
+                    _listening.value = true
+                    Diagnostics.log("app", "assistant held on ${c.device.name}")
+                }.onFailure { _messages.tryEmit(it.message ?: "Could not start Siri") }
+                else -> {
+                    if (c is VoiceCapable) _messages.tryEmit("Allow microphone access to talk to the TV from your phone")
+                    runCatching { withContext(Dispatchers.IO) { c.sendKey(RemoteKey.ASSISTANT) } }
+                        .onFailure { _messages.tryEmit(it.message ?: "Command failed") }
+                }
+            }
+        }
+    }
+
+    fun assistantReleased() {
+        val c = _controller.value
+        val job = assistantJob
+        assistantJob = null
+        scope.launch {
+            job?.cancel()
+            job?.join()
+            if (c is HoldableAssistant && c !is VoiceCapable && _listening.value) {
+                runCatching { withContext(Dispatchers.IO) { c.assistantUp() } }
+                Diagnostics.log("app", "assistant released on ${c.device.name}")
+            }
+            _listening.value = false
+        }
+    }
+
+
+    /** Whether holding the assistant button would use the phone microphone. */
+    fun wantsMicrophone(): Boolean = _controller.value is VoiceCapable
+    private suspend fun streamVoice(c: VoiceCapable) {
+        val session = try {
+            withContext(Dispatchers.IO) { c.beginVoice() }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Diagnostics.log("voice", "could not open a voice session", e)
+            _messages.tryEmit(e.message ?: "The TV did not accept voice")
+            return
+        }
+        _listening.value = true
+        try {
+            VoiceRecorder(c.voiceSampleRate, c.voiceChunkBytes).record { chunk ->
+                c.sendVoice(session, chunk)
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // Button released: the normal way out.
+        } catch (e: Exception) {
+            Diagnostics.log("voice", "recording failed", e)
+            _messages.tryEmit(e.message ?: "Microphone failed")
+        } finally {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
+                runCatching { c.endVoice(session) }
+            }
+            _listening.value = false
+        }
+    }
     fun sendText(text: String) = scope.launch {
         val c = _controller.value ?: return@launch
         Diagnostics.log("app", "send ${text.length} chars of text to ${c.device.name}")

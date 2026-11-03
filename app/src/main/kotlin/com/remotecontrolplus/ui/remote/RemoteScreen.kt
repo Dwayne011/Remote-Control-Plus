@@ -71,6 +71,7 @@ import com.remotecontrolplus.ui.MainViewModel
 import com.remotecontrolplus.ui.PairingUiState
 import com.remotecontrolplus.ui.components.PairingDialog
 import com.remotecontrolplus.ui.components.icon
+import com.remotecontrolplus.ui.components.AssistantButton
 import com.remotecontrolplus.ui.components.PadModeToggle
 import com.remotecontrolplus.ui.components.TouchPad
 import com.remotecontrolplus.ui.components.skin
@@ -212,9 +213,15 @@ fun RemoteScreen(
                             viewModel.press(RemoteKey.HOME)
                         }
                         if (RemoteKey.ASSISTANT in caps.keys) {
-                            PillButton(Icons.Filled.Mic, skin.assistantLabel, connected, Modifier.weight(1f)) {
-                                viewModel.press(RemoteKey.ASSISTANT)
-                            }
+                            val listening by viewModel.remoteManager.listening.collectAsStateWithLifecycle()
+                            AssistantButton(
+                                remote = viewModel.remoteManager,
+                                label = skin.assistantLabel,
+                                enabled = connected,
+                                listening = listening,
+                                shape = RoundedCornerShape(20.dp),
+                                modifier = Modifier.weight(1f).height(56.dp),
+                            )
                         }
                     }
                 }

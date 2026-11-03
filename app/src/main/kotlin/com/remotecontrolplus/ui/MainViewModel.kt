@@ -43,6 +43,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val credentials = app.credentials
     private val remote = app.remote
 
+    /** The shared live connection, for components that talk to it directly. */
+    val remoteManager get() = remote
+
     val devices: StateFlow<List<TvDevice>> get() = remote.devices
     val selected: StateFlow<TvDevice?> get() = remote.selected
     val controller: StateFlow<TvController?> get() = remote.controller

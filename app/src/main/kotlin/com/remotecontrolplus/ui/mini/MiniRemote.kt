@@ -50,6 +50,7 @@ import com.remotecontrolplus.core.ConnectionState
 import com.remotecontrolplus.core.Haptics
 import com.remotecontrolplus.core.RemoteKey
 import com.remotecontrolplus.data.RemoteManager
+import com.remotecontrolplus.ui.components.AssistantButton
 import com.remotecontrolplus.ui.components.TouchPad
 import com.remotecontrolplus.ui.components.icon
 import com.remotecontrolplus.ui.components.skin
@@ -188,9 +189,15 @@ fun MiniRemote(remote: RemoteManager, onOpenFull: () -> Unit, onDismiss: () -> U
                     press(RemoteKey.HOME)
                 }
                 if (RemoteKey.ASSISTANT in caps.keys) {
-                    RoundButton(Icons.Filled.Mic, skin?.assistantLabel ?: "Assistant", connected, 60.dp) {
-                        press(RemoteKey.ASSISTANT)
-                    }
+                    val listening by remote.listening.collectAsStateWithLifecycle()
+                    AssistantButton(
+                        remote = remote,
+                        label = skin?.assistantLabel ?: "Assistant",
+                        enabled = connected,
+                        listening = listening,
+                        shape = CircleShape,
+                        modifier = Modifier.size(60.dp),
+                    )
                 }
                 RoundButton(Icons.Filled.OpenInFull, "Open full remote", enabled = true, size = 60.dp) { Haptics.click(); onOpenFull() }
             }

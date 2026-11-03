@@ -11,6 +11,9 @@ import com.remotecontrolplus.core.RemoteKey
 import com.remotecontrolplus.core.TextFieldState
 import com.remotecontrolplus.core.TvController
 import com.remotecontrolplus.core.TvDevice
+import com.remotecontrolplus.core.VoiceCapable
+import dev.amrakshay.atvremote.protocol.VOICE_CHUNK_MIN
+import dev.amrakshay.atvremote.protocol.VOICE_SAMPLE_RATE
 import dev.amrakshay.atvremote.protocol.ClientIdentity
 import dev.amrakshay.atvremote.protocol.PairingSession
 import dev.amrakshay.atvremote.protocol.RemoteSession
@@ -36,7 +39,7 @@ class GoogleTvController(
     override val device: TvDevice,
     private val serializedIdentity: String?,
     private val scope: CoroutineScope,
-) : TvController, Pairable {
+) : TvController, Pairable, VoiceCapable {
 
     @Serializable
     private data class StoredIdentity(val certificatePem: String, val privateKeyPem: String)
@@ -154,6 +157,24 @@ class GoogleTvController(
         }
     }
 
+
+    override val voiceSampleRate = VOICE_SAMPLE_RATE
+    override val voiceChunkBytes = VOICE_CHUNK_MIN
+
+    override suspend fun beginVoice(): Int {
+        val s = session ?: throw NotConnectedException()
+        Diagnostics.log("googletv", "voice: TV negotiated voice=${s.voiceSupported}; pressing search")
+        return s.beginVoice().also { Diagnostics.log("googletv", "voice: session $it open") }
+    }
+
+    override suspend fun sendVoice(session: Int, pcm: ByteArray) {
+        (this.session ?: throw NotConnectedException()).sendVoice(session, pcm)
+    }
+
+    override suspend fun endVoice(session: Int) {
+        this.session?.endVoice(session)
+        Diagnostics.log("googletv", "voice: session $session closed")
+    }
     override suspend fun sendText(text: String) {
         val s = session ?: throw NotConnectedException()
         s.sendText(text)

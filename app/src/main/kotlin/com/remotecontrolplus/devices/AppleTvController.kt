@@ -11,6 +11,7 @@ import com.remotecontrolplus.core.RemoteKey
 import com.remotecontrolplus.core.TextFieldState
 import com.remotecontrolplus.core.TvController
 import com.remotecontrolplus.core.TvDevice
+import com.remotecontrolplus.core.HoldableAssistant
 import dev.atvremote.protocol.companion.AppleTvRemote
 import dev.atvremote.protocol.companion.Button
 import dev.atvremote.protocol.companion.CompanionClient
@@ -36,7 +37,7 @@ class AppleTvController(
     private val portResolver: suspend (TvDevice, Long) -> Int?,
     private val cachedPort: (TvDevice) -> Int?,
     private val rememberPort: (TvDevice, Int) -> Unit,
-) : TvController, Pairable {
+) : TvController, Pairable, HoldableAssistant {
 
     override val capabilities = Capabilities(
         // Apple TV has no mute key; volume routes over HDMI-CEC when the TV supports it.
@@ -193,6 +194,15 @@ class AppleTvController(
         _volume.value = runCatching { r.getVolume()?.toFloat() }.getOrNull()
     }
 
+
+    /** Siri is held like the Siri Remote: down on press, up on release. */
+    override suspend fun assistantDown() {
+        (remote ?: throw NotConnectedException()).buttonDown(Button.SIRI)
+    }
+
+    override suspend fun assistantUp() {
+        remote?.buttonUp(Button.SIRI)
+    }
     override suspend fun sendText(text: String) {
         val r = remote ?: throw NotConnectedException()
         r.sendText(text, clearPrevious = false)

@@ -74,3 +74,20 @@ interface Pairable {
 
 class NotConnectedException : Exception("Not connected to the TV")
 class PairingException(message: String) : Exception(message)
+
+/** Devices that accept phone microphone audio for their assistant. */
+interface VoiceCapable {
+    val voiceSampleRate: Int
+    val voiceChunkBytes: Int
+
+    /** Open the assistant and a voice session; returns the session id. */
+    suspend fun beginVoice(): Int
+    suspend fun sendVoice(session: Int, pcm: ByteArray)
+    suspend fun endVoice(session: Int)
+}
+
+/** Devices whose assistant button is held while talking (into the TV's own remote). */
+interface HoldableAssistant {
+    suspend fun assistantDown()
+    suspend fun assistantUp()
+}

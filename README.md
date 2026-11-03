@@ -77,6 +77,14 @@ with the Python libraries samsung-tv-ws-api, PyWebOSTV and the Roku ECP docs as 
 
 Each vendored module keeps its upstream licence and a `NOTICE.md` listing local changes.
 
+## Voice
+
+Hold the microphone button to talk. On Google TV the phone microphone is streamed to the
+assistant (16-bit mono 8 kHz PCM over the remote protocol's voice channel, as androidtvremote2
+does); the first press asks for microphone access. On Apple TV the button holds Siri like the
+Siri Remote, but no audio is sent: no public protocol carries microphone audio to Siri, and the
+Apple TV listens only through its own remote.
+
 ## Diagnostics
 
 The bug icon in the title bar opens a log of everything the app did: discovery results from

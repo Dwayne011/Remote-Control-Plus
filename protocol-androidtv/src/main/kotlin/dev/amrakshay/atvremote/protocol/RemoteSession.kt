@@ -26,6 +26,11 @@ import remote.Remotemessage.RemoteKeyInject
 import remote.Remotemessage.RemoteMessage
 import remote.Remotemessage.RemotePingResponse
 import remote.Remotemessage.RemoteSetActive
+import remote.Remotemessage.RemoteVoiceBegin
+import remote.Remotemessage.RemoteVoiceEnd
+import remote.Remotemessage.RemoteVoicePayload
+import com.google.protobuf.ByteString
+import kotlinx.coroutines.withTimeout
 import java.io.OutputStream
 import javax.net.ssl.SSLSocket
 
@@ -45,6 +50,16 @@ class ConnectionLost(message: String) : Exception(message)
  * IME is what makes [currentApp] report anything.
  */
 private const val ACTIVE_FEATURES = 1 or 2 or 4 or 32 or 64 or 512 // 615
+
+/** Voice feature bit (Remote Control Plus addition, after androidtvremote2). */
+private const val FEATURE_VOICE = 8
+
+/** 16-bit mono PCM at 8 kHz, in 8 KB to 20 KB payloads (androidtvremote2). */
+const val VOICE_SAMPLE_RATE = 8000
+const val VOICE_CHUNK_MIN = 8 * 1024
+const val VOICE_CHUNK_MAX = 20 * 1024
+
+class VoiceUnavailable(message: String) : Exception(message)
 
 class RemoteSession(
     private val host: String,
@@ -68,6 +83,14 @@ class RemoteSession(
     private var readerJob: Job? = null
     private val frames = FrameReader()
     private val started = CompletableDeferred<Unit>()
+
+    /** Features both sides support, settled on the TV's RemoteConfigure. */
+    @Volatile private var activeFeatures: Int = ACTIVE_FEATURES or FEATURE_VOICE
+
+    /** True when the TV agreed to voice in the feature negotiation. */
+    val voiceSupported: Boolean get() = activeFeatures and FEATURE_VOICE != 0
+
+    @Volatile private var voiceBegin: CompletableDeferred<Int>? = null
 
     /**
      * Writes go here, never on the caller's thread.
@@ -178,6 +201,61 @@ class RemoteSession(
         )
     }
 
+    /**
+     * Open a voice session: press search, wait for the TV to offer a session
+     * id, and echo it back. Audio may be sent once this returns.
+     * Remote Control Plus addition, following androidtvremote2.
+     */
+    suspend fun beginVoice(timeoutMs: Long = 3000): Int {
+        val deferred = CompletableDeferred<Int>()
+        voiceBegin = deferred
+        try {
+            sendKey(RemoteKeyCode.KEYCODE_SEARCH)
+            val session = try {
+                withTimeout(timeoutMs) { deferred.await() }
+            } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                throw VoiceUnavailable(
+                    if (voiceSupported) "The TV did not start a voice session"
+                    else "This TV does not accept voice from a remote app",
+                )
+            }
+            send(
+                RemoteMessage.newBuilder().setRemoteVoiceBegin(
+                    RemoteVoiceBegin.newBuilder().setSessionId(session),
+                ),
+            )
+            return session
+        } finally {
+            voiceBegin = null
+        }
+    }
+
+    /** Send PCM, split to at most 20 KB per message and padded to at least 8 KB. */
+    fun sendVoice(session: Int, pcm: ByteArray) {
+        var offset = 0
+        while (offset < pcm.size) {
+            val end = minOf(offset + VOICE_CHUNK_MAX, pcm.size)
+            var piece = pcm.copyOfRange(offset, end)
+            if (piece.size < VOICE_CHUNK_MIN) piece = piece.copyOf(VOICE_CHUNK_MIN)
+            send(
+                RemoteMessage.newBuilder().setRemoteVoicePayload(
+                    RemoteVoicePayload.newBuilder()
+                        .setSessionId(session)
+                        .setSamples(ByteString.copyFrom(piece)),
+                ),
+            )
+            offset = end
+        }
+    }
+
+    fun endVoice(session: Int) {
+        send(
+            RemoteMessage.newBuilder().setRemoteVoiceEnd(
+                RemoteVoiceEnd.newBuilder().setSessionId(session),
+            ),
+        )
+    }
+
     override fun close() {
         readerJob?.cancel()
         writeScope.cancel()
@@ -220,12 +298,14 @@ class RemoteSession(
     private fun handle(message: RemoteMessage) {
         when {
             message.hasRemoteConfigure() -> {
+                val offered = message.remoteConfigure.code1
+                activeFeatures = (ACTIVE_FEATURES or FEATURE_VOICE) and offered
                 val info = message.remoteConfigure.deviceInfo
                 _device.value = DeviceInfo(info.vendor, info.model, info.appVersion)
                 send(
                     RemoteMessage.newBuilder().setRemoteConfigure(
                         RemoteConfigure.newBuilder()
-                            .setCode1(ACTIVE_FEATURES)
+                            .setCode1(activeFeatures)
                             .setDeviceInfo(
                                 RemoteDeviceInfo.newBuilder()
                                     .setUnknown1(1)
@@ -239,7 +319,7 @@ class RemoteSession(
 
             message.hasRemoteSetActive() -> send(
                 RemoteMessage.newBuilder().setRemoteSetActive(
-                    RemoteSetActive.newBuilder().setActive(ACTIVE_FEATURES),
+                    RemoteSetActive.newBuilder().setActive(activeFeatures),
                 ),
             )
 
@@ -273,6 +353,9 @@ class RemoteSession(
                     ?.takeIf { it.hasTextFieldStatus() }
                     ?.let { _textField.value = it.textFieldStatus.value }
             }
+
+            // The TV answers KEYCODE_SEARCH with a session id once voice is on.
+            message.hasRemoteVoiceBegin() -> voiceBegin?.complete(message.remoteVoiceBegin.sessionId)
 
             message.hasRemoteError() -> _disconnects.tryEmit("TV reported an error")
         }
