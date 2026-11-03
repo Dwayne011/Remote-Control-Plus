@@ -32,7 +32,9 @@ class AppleTvController(
     override val device: TvDevice,
     private val serializedCredentials: String?,
     private val scope: CoroutineScope,
-    private val portResolver: suspend (TvDevice) -> Int?,
+    private val portResolver: suspend (TvDevice, Long) -> Int?,
+    private val cachedPort: (TvDevice) -> Int?,
+    private val rememberPort: (TvDevice, Int) -> Unit,
 ) : TvController, Pairable {
 
     override val capabilities = Capabilities(
@@ -60,37 +62,67 @@ class AppleTvController(
             return
         }
         _state.value = ConnectionState.Connecting
+        // The Companion port moves across Apple TV reboots. Prefer the one the
+        // device is advertising now; fall back to the last port that worked.
+        val resolved = portResolver(device, 6000)
+        val first = resolved ?: cachedPort(device) ?: device.port
         try {
-            val port = portResolver(device) ?: device.port
-            Diagnostics.log("appletv", "connecting to ${device.host}:$port with stored credentials")
-            val r = AppleTvRemote(device.host, port, credentials, scope)
-            r.onDisconnect = { cause ->
-                if (_state.value is ConnectionState.Connected) {
-                    _state.value = ConnectionState.Error(cause?.message ?: "Connection lost")
-                }
-            }
-            r.onCapabilities = { caps ->
-                volumeSupported = caps.volume
-                Diagnostics.log("appletv", "device capabilities: volume=${caps.volume} play=${caps.play}")
-                if (!caps.volume) _volume.value = null else scope.launch { refreshVolume() }
-            }
-            r.onTextFocus = { session ->
-                _textField.value = TextFieldState(
-                    focused = session != null,
-                    text = session?.textBeforeCursor ?: "",
-                )
-            }
-            r.connect()
-            remote = r
-            Diagnostics.log("appletv", "connected and session started")
-            _state.value = ConnectionState.Connected
+            attempt(credentials, first)
+            return
+        } catch (e: dev.atvremote.protocol.companion.PairingException) {
+            Diagnostics.log("appletv", "credentials rejected; pairing required", e)
+            _state.value = ConnectionState.PairingRequired
+            return
+        } catch (e: Exception) {
+            Diagnostics.log("appletv", "connect to port $first failed", e)
+            remote?.close()
+            remote = null
+        }
+        // One retry with a fresh, longer lookup, so a stale port or a slow
+        // first mDNS answer does not need a manual Reconnect.
+        val retryPort = portResolver(device, 10_000)
+        if (retryPort == null || retryPort == first) {
+            _state.value = ConnectionState.Error("Apple TV not reachable. Is it asleep or off the network?")
+            return
+        }
+        try {
+            Diagnostics.log("appletv", "retrying on freshly advertised port $retryPort")
+            attempt(credentials, retryPort)
         } catch (e: dev.atvremote.protocol.companion.PairingException) {
             Diagnostics.log("appletv", "credentials rejected; pairing required", e)
             _state.value = ConnectionState.PairingRequired
         } catch (e: Exception) {
-            Diagnostics.log("appletv", "connect failed", e)
+            Diagnostics.log("appletv", "retry failed", e)
+            remote?.close()
+            remote = null
             _state.value = ConnectionState.Error(e.message ?: "Could not connect")
         }
+    }
+
+    private suspend fun attempt(credentials: Credentials, port: Int) {
+        Diagnostics.log("appletv", "connecting to ${device.host}:$port with stored credentials")
+        val r = AppleTvRemote(device.host, port, credentials, scope)
+        r.onDisconnect = { cause ->
+            if (_state.value is ConnectionState.Connected) {
+                _state.value = ConnectionState.Error(cause?.message ?: "Connection lost")
+            }
+        }
+        r.onCapabilities = { caps ->
+            volumeSupported = caps.volume
+            Diagnostics.log("appletv", "device capabilities: volume=${caps.volume} play=${caps.play}")
+            if (!caps.volume) _volume.value = null else scope.launch { refreshVolume() }
+        }
+        r.onTextFocus = { session ->
+            _textField.value = TextFieldState(
+                focused = session != null,
+                text = session?.textBeforeCursor ?: "",
+            )
+        }
+        remote = r
+        r.connect()
+        rememberPort(device, port)
+        Diagnostics.log("appletv", "connected and session started")
+        _state.value = ConnectionState.Connected
     }
 
     override fun disconnect() {
@@ -154,7 +186,7 @@ class AppleTvController(
     override suspend fun beginPairing(): PairingHandle {
         disconnect()
         _state.value = ConnectionState.Connecting
-        val port = portResolver(device) ?: device.port
+        val port = portResolver(device, 6000) ?: cachedPort(device) ?: device.port
         Diagnostics.log("appletv", "pairing: opening ${device.host}:$port (stored port ${device.port})")
         val client = CompanionClient(device.host, port, scope)
         val session = try {

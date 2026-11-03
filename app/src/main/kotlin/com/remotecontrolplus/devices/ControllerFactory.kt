@@ -15,9 +15,14 @@ class ControllerFactory(
         DeviceType.SAMSUNG -> SamsungController(device, credential)
         DeviceType.LG -> LgController(device, credential)
         DeviceType.ROKU -> RokuController(device)
-        DeviceType.APPLE_TV -> AppleTvController(device, credential, scope) { d ->
-            nsd.resolveCompanionPort(d)
-        }
+        DeviceType.APPLE_TV -> AppleTvController(
+            device = device,
+            serializedCredentials = credential,
+            scope = scope,
+            portResolver = { d, timeout -> nsd.resolveCompanionPort(d, timeout) },
+            cachedPort = { d -> nsd.cachedCompanionPort(d) },
+            rememberPort = { d, port -> nsd.rememberCompanionPort(d, port) },
+        )
         DeviceType.GOOGLE_TV -> GoogleTvController(device, credential, scope)
         DeviceType.CHROMECAST -> ChromecastController(device, scope)
     }

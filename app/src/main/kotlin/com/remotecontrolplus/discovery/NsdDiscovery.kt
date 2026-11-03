@@ -49,21 +49,57 @@ class NsdDiscovery(context: Context) {
             .forEach(onFound)
     }
 
+    private val portCache = context.applicationContext.getSharedPreferences("companion_ports", Context.MODE_PRIVATE)
+
+    /** The last Companion port that worked for this Apple TV, if any. */
+    fun cachedCompanionPort(device: TvDevice): Int? =
+        portCache.getInt(device.id, -1).takeIf { it > 0 }
+
+    fun rememberCompanionPort(device: TvDevice, port: Int) {
+        portCache.edit().putInt(device.id, port).apply()
+    }
+
     /**
      * The Companion port an Apple TV currently advertises, which changes across
-     * reboots. Null when the device is not found within the timeout.
+     * reboots. Returns as soon as the device answers rather than waiting out a
+     * fixed browse window; null if it does not answer within [timeoutMs].
      */
-    suspend fun resolveCompanionPort(device: TvDevice): Int? = withContext(Dispatchers.IO) {
-        val infos = browse(listOf(COMPANION_SERVICE_TYPE), 3000)
-        for (info in infos) {
-            val r = withTimeoutOrNull(3000) { resolve(info) } ?: continue
-            val id = r.txt("rpMRtID")
-            if (id == device.id || r.host?.hostAddress == device.host) {
-                Diagnostics.log("mdns", "Apple TV ${device.name} currently advertises Companion port ${r.port}")
-                return@withContext r.port
+    suspend fun resolveCompanionPort(device: TvDevice, timeoutMs: Long = 6000): Int? = withContext(Dispatchers.IO) {
+        val started = System.currentTimeMillis()
+        val found = kotlinx.coroutines.channels.Channel<NsdServiceInfo>(kotlinx.coroutines.channels.Channel.UNLIMITED)
+        val listener = object : NsdManager.DiscoveryListener {
+            override fun onDiscoveryStarted(serviceType: String) = Unit
+            override fun onServiceFound(serviceInfo: NsdServiceInfo) { found.trySend(serviceInfo) }
+            override fun onServiceLost(serviceInfo: NsdServiceInfo) = Unit
+            override fun onDiscoveryStopped(serviceType: String) = Unit
+            override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
+                Diagnostics.log("mdns", "Companion browse failed to start (error $errorCode)")
+                found.close()
             }
+            override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) = Unit
         }
-        null
+        runCatching { nsd.discoverServices(COMPANION_SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, listener) }
+        try {
+            withTimeoutOrNull(timeoutMs) {
+                for (info in found) {
+                    val r = withTimeoutOrNull(3000) { resolve(info) } ?: continue
+                    val id = r.txt("rpMRtID")
+                    if (id == device.id || r.host?.hostAddress == device.host) {
+                        Diagnostics.log(
+                            "mdns",
+                            "Apple TV ${device.name} advertises Companion port ${r.port} (found in ${System.currentTimeMillis() - started}ms)",
+                        )
+                        rememberCompanionPort(device, r.port)
+                        return@withTimeoutOrNull r.port
+                    }
+                }
+                null
+            }
+        } finally {
+            runCatching { nsd.stopServiceDiscovery(listener) }
+        }.also {
+            if (it == null) Diagnostics.log("mdns", "Apple TV ${device.name} did not answer the port lookup within ${timeoutMs}ms")
+        }
     }
 
     private suspend fun browse(types: List<String>, timeoutMs: Long): List<NsdServiceInfo> {
