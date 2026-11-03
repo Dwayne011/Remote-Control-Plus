@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -187,7 +188,6 @@ fun RemoteScreen(
                             enabled = connected,
                             onKey = viewModel::press,
                             onSwipe = viewModel::swipe,
-                            onTap = { viewModel.press(it, haptic = false) },
                             modifier = Modifier
                                 .fillMaxHeight()
                                 .aspectRatio(1f, matchHeightConstraintsFirst = true),
@@ -210,6 +210,11 @@ fun RemoteScreen(
                         }
                         PillButton(skin.homeIcon, skin.homeLabel, connected && RemoteKey.HOME in caps.keys, Modifier.weight(1f)) {
                             viewModel.press(RemoteKey.HOME)
+                        }
+                        if (RemoteKey.ASSISTANT in caps.keys) {
+                            PillButton(Icons.Filled.Mic, skin.assistantLabel, connected, Modifier.weight(1f)) {
+                                viewModel.press(RemoteKey.ASSISTANT)
+                            }
                         }
                     }
                 }

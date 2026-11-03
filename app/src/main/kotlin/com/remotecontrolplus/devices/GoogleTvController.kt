@@ -136,6 +136,7 @@ class GoogleTvController(
             RemoteKey.PAUSE -> RemoteKeyCode.KEYCODE_MEDIA_PAUSE
             RemoteKey.PREVIOUS -> RemoteKeyCode.KEYCODE_MEDIA_PREVIOUS
             RemoteKey.NEXT -> RemoteKeyCode.KEYCODE_MEDIA_NEXT
+            RemoteKey.ASSISTANT -> RemoteKeyCode.KEYCODE_ASSIST
         }
         s.sendKey(code)
     }

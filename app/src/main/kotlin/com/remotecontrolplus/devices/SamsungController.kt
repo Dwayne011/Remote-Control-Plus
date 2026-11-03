@@ -42,7 +42,7 @@ class SamsungController(
     private val appName: String = "Remote Control Plus",
 ) : TvController, Pairable {
 
-    override val capabilities = Capabilities(keys = Capabilities.ALL_KEYS, textEntry = true)
+    override val capabilities = Capabilities(keys = Capabilities.ALL_KEYS - RemoteKey.ASSISTANT, textEntry = true)
 
     private val _state = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     override val state: StateFlow<ConnectionState> = _state.asStateFlow()
@@ -99,6 +99,7 @@ class SamsungController(
             RemoteKey.PAUSE -> "KEY_PAUSE"
             RemoteKey.PREVIOUS -> "KEY_REWIND"
             RemoteKey.NEXT -> "KEY_FF"
+            RemoteKey.ASSISTANT -> return
         }
         send(
             buildJsonObject {

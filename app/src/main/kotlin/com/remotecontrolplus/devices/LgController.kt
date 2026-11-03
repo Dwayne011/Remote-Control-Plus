@@ -47,7 +47,7 @@ class LgController(
     private val appName: String = "Remote Control Plus",
 ) : TvController, Pairable {
 
-    override val capabilities = Capabilities(keys = Capabilities.ALL_KEYS, textEntry = true, volumeSlider = true)
+    override val capabilities = Capabilities(keys = Capabilities.ALL_KEYS - RemoteKey.ASSISTANT, textEntry = true, volumeSlider = true)
 
     private val _volume = MutableStateFlow<Float?>(null)
     override val volume: StateFlow<Float?> = _volume.asStateFlow()
@@ -115,6 +115,7 @@ class LgController(
             RemoteKey.PAUSE -> request("ssap://media.controls/pause")
             RemoteKey.PREVIOUS -> request("ssap://media.controls/rewind")
             RemoteKey.NEXT -> request("ssap://media.controls/fastForward")
+            RemoteKey.ASSISTANT -> Unit
         }
     }
 

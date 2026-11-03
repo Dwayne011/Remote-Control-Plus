@@ -53,6 +53,8 @@ class AppleTvController(
 
     private var remote: AppleTvRemote? = null
     @Volatile private var volumeSupported = false
+    private val _powerState = MutableStateFlow<Boolean?>(null)
+    override val powerState: StateFlow<Boolean?> = _powerState.asStateFlow()
     private val _volume = MutableStateFlow<Float?>(null)
     override val volume: StateFlow<Float?> = _volume.asStateFlow()
 
@@ -110,6 +112,18 @@ class AppleTvController(
             Diagnostics.log("appletv", "device capabilities: volume=${caps.volume} play=${caps.play}")
             if (!caps.volume) _volume.value = null else scope.launch { refreshVolume() }
         }
+        // TVSystemStatus: 1 = asleep, 2 = waking, 3 = awake (observed on tvOS 27).
+        r.onEvent = { name, content ->
+            if (name == "TVSystemStatus") {
+                val s = (content["state"] as? Number)?.toInt()
+                Diagnostics.log("appletv", "system status $s")
+                _powerState.value = when (s) {
+                    1 -> false
+                    2, 3 -> true
+                    else -> _powerState.value
+                }
+            }
+        }
         r.onTextFocus = { session ->
             _textField.value = TextFieldState(
                 focused = session != null,
@@ -119,11 +133,13 @@ class AppleTvController(
         remote = r
         r.connect()
         rememberPort(device, port)
+        if (_powerState.value == null) _powerState.value = true
         Diagnostics.log("appletv", "connected and session started")
         _state.value = ConnectionState.Connected
     }
 
     override fun disconnect() {
+        _powerState.value = null
         remote?.close()
         remote = null
         _state.value = ConnectionState.Disconnected
@@ -132,8 +148,8 @@ class AppleTvController(
     override suspend fun sendKey(key: RemoteKey) {
         val r = remote ?: throw NotConnectedException()
         when (key) {
-            RemoteKey.POWER_ON -> r.wake()
-            RemoteKey.POWER_OFF -> r.sleep()
+            RemoteKey.POWER_ON -> { r.wake(); _powerState.value = true }
+            RemoteKey.POWER_OFF -> { r.sleep(); _powerState.value = false }
             RemoteKey.VOLUME_UP -> { r.volumeUp(); refreshVolume() }
             RemoteKey.VOLUME_DOWN -> { r.volumeDown(); refreshVolume() }
             RemoteKey.MUTE -> Unit
@@ -148,6 +164,7 @@ class AppleTvController(
             RemoteKey.PAUSE -> r.pause()
             RemoteKey.PREVIOUS -> r.previousTrack()
             RemoteKey.NEXT -> r.nextTrack()
+            RemoteKey.ASSISTANT -> r.press(Button.SIRI, holdMs = 300)
         }
     }
 

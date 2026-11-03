@@ -187,6 +187,7 @@ class RemoteManager(
 
     fun swipe(direction: RemoteKey) = scope.launch {
         val c = _controller.value ?: return@launch
+        Haptics.tick()
         Diagnostics.log("app", "swipe $direction on ${c.device.name}")
         runCatching { withContext(Dispatchers.IO) { c.swipe(direction) } }.onFailure {
             Diagnostics.log("app", "swipe failed", it)

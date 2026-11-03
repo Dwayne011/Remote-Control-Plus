@@ -19,10 +19,11 @@ data class DeviceSkin(
     val backLabel: String,
     val homeIcon: ImageVector,
     val homeLabel: String,
+    val assistantLabel: String = "Assistant",
 )
 
 fun DeviceType.skin(): DeviceSkin = when (this) {
-    DeviceType.APPLE_TV -> DeviceSkin(Icons.AutoMirrored.Filled.ArrowBackIos, "Back", Icons.Filled.Tv, "TV")
+    DeviceType.APPLE_TV -> DeviceSkin(Icons.AutoMirrored.Filled.ArrowBackIos, "Back", Icons.Filled.Tv, "TV", "Siri")
     DeviceType.SAMSUNG -> DeviceSkin(Icons.AutoMirrored.Filled.KeyboardReturn, "Return", Icons.Filled.Home, "Home")
     else -> DeviceSkin(Icons.AutoMirrored.Filled.ArrowBack, "Back", Icons.Filled.Home, "Home")
 }

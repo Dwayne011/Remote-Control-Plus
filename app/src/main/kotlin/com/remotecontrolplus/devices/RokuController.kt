@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit
  */
 class RokuController(override val device: TvDevice) : TvController {
 
-    override val capabilities = Capabilities(keys = Capabilities.ALL_KEYS, textEntry = true)
+    override val capabilities = Capabilities(keys = Capabilities.ALL_KEYS - RemoteKey.ASSISTANT, textEntry = true)
 
     private val _state = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     override val state: StateFlow<ConnectionState> = _state.asStateFlow()
@@ -38,6 +38,20 @@ class RokuController(override val device: TvDevice) : TvController {
 
     private val base = "http://${device.host}:8060"
 
+    private val _powerState = MutableStateFlow<Boolean?>(null)
+    override val powerState: StateFlow<Boolean?> = _powerState.asStateFlow()
+
+    /** device-info reports power-mode PowerOn, or DisplayOff / Ready when in standby. */
+    private suspend fun refreshPower() = withContext(Dispatchers.IO) {
+        runCatching {
+            http.newCall(Request.Builder().url("$base/query/device-info").build()).execute().use { r ->
+                val body = r.body?.string() ?: return@use
+                val mode = Regex("<power-mode>(.*?)</power-mode>").find(body)?.groupValues?.get(1)
+                if (mode != null) _powerState.value = mode == "PowerOn"
+            }
+        }
+    }
+
     override suspend fun connect() {
         _state.value = ConnectionState.Connecting
         _state.value = try {
@@ -46,6 +60,7 @@ class RokuController(override val device: TvDevice) : TvController {
                     if (!it.isSuccessful) throw Exception("HTTP ${it.code}")
                 }
             }
+            refreshPower()
             ConnectionState.Connected
         } catch (e: Exception) {
             ConnectionState.Error(e.message ?: "Roku not reachable")
@@ -74,8 +89,13 @@ class RokuController(override val device: TvDevice) : TvController {
             RemoteKey.PLAY, RemoteKey.PAUSE -> "Play"
             RemoteKey.PREVIOUS -> "Rev"
             RemoteKey.NEXT -> "Fwd"
+            RemoteKey.ASSISTANT -> return
         }
         keypress(name)
+        if (key == RemoteKey.POWER_ON || key == RemoteKey.POWER_OFF) {
+            kotlinx.coroutines.delay(1500)
+            refreshPower()
+        }
     }
 
     override suspend fun sendText(text: String) {

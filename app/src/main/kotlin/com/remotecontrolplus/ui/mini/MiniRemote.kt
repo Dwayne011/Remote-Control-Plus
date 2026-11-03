@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material.icons.filled.PowerSettingsNew
@@ -143,8 +144,10 @@ fun MiniRemote(remote: RemoteManager, onOpenFull: () -> Unit, onDismiss: () -> U
                     }
                 }
                 val onTv = powerState == true || (powerState == null && connected)
-                val powerAvailable = (RemoteKey.POWER_ON in caps.keys || RemoteKey.POWER_OFF in caps.keys) &&
-                    !waking && (connected || device?.mac != null)
+                val neededKey = if (onTv) RemoteKey.POWER_OFF else RemoteKey.POWER_ON
+                val powerAvailable = neededKey in caps.keys && !waking &&
+                    (connected || (neededKey == RemoteKey.POWER_ON && device?.mac != null))
+
                 RoundButton(
                     Icons.Filled.PowerSettingsNew,
                     if (onTv) "Turn off" else "Turn on",
@@ -160,7 +163,6 @@ fun MiniRemote(remote: RemoteManager, onOpenFull: () -> Unit, onDismiss: () -> U
                     enabled = connected,
                     onKey = press,
                     onSwipe = { remote.swipe(it) },
-                    onTap = { remote.press(it, haptic = false) },
                     modifier = if (padMode == "dpad") {
                         Modifier.size(PAD_HEIGHT)
                     } else {
@@ -184,6 +186,11 @@ fun MiniRemote(remote: RemoteManager, onOpenFull: () -> Unit, onDismiss: () -> U
                 }
                 WideButton(skin?.homeIcon ?: Icons.Filled.Keyboard, skin?.homeLabel ?: "Home", connected && RemoteKey.HOME in caps.keys, Modifier.weight(1f).height(60.dp)) {
                     press(RemoteKey.HOME)
+                }
+                if (RemoteKey.ASSISTANT in caps.keys) {
+                    RoundButton(Icons.Filled.Mic, skin?.assistantLabel ?: "Assistant", connected, 60.dp) {
+                        press(RemoteKey.ASSISTANT)
+                    }
                 }
                 RoundButton(Icons.Filled.OpenInFull, "Open full remote", enabled = true, size = 60.dp) { Haptics.click(); onOpenFull() }
             }

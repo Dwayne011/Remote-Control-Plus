@@ -39,6 +39,8 @@ class ChromecastController(
     override val textField: StateFlow<TextFieldState> = _textField.asStateFlow()
 
     private var client: CastClient? = null
+    private val _powerState = MutableStateFlow<Boolean?>(null)
+    override val powerState: StateFlow<Boolean?> = _powerState.asStateFlow()
     private val _volume = MutableStateFlow<Float?>(null)
     override val volume: StateFlow<Float?> = _volume.asStateFlow()
     private var watcher: Job? = null
@@ -50,7 +52,13 @@ class ChromecastController(
             c.connect(scope)
             client = c
             watcher = scope.launch {
-                launch { c.receiverStatus.collect { st -> _volume.value = st?.volumeLevel?.toFloat() } }
+                launch {
+                    c.receiverStatus.collect { st ->
+                        _volume.value = st?.volumeLevel?.toFloat()
+                        // "Off" here means stop casting, so it is only live while something casts.
+                        _powerState.value = st?.mediaApplication != null
+                    }
+                }
                 c.disconnects.collect { reason ->
                     if (_state.value is ConnectionState.Connected) _state.value = ConnectionState.Error(reason)
                 }

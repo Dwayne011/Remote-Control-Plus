@@ -48,6 +48,8 @@ enum class RemoteKey {
     PAUSE,
     PREVIOUS,
     NEXT,
+    /** Siri on Apple TV, Google Assistant / Gemini on Google TV. */
+    ASSISTANT,
 }
 
 /** What a particular device can do, so the UI hides what would do nothing. */
