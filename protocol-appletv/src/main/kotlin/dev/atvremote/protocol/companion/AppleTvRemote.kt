@@ -267,6 +267,38 @@ class AppleTvRemote(
      * Hold a button down until the matching [up] — how a held select opens a
      * context menu, held for exactly as long as the finger stays down.
      */
+    // ------------------------------------------------------------ Siri voice
+    // Local addition. Message names and the _siA layout come from captures of
+    // the iPhone remote posted in pyatv issues #2325 and #2875: Siri held via
+    // _hidC, then _siriStart, _siA audio events, _siriStop. No non-Apple
+    // client is publicly known to have had speech recognised this way.
+
+    /** Requests the Apple TV sends us (e.g. `_siriEndpoint`). */
+    var onRequest: ((String, Map<Any?, Any?>) -> Map<String, Any?>?)?
+        get() = client.onRequest
+        set(v) { client.onRequest = v }
+
+    suspend fun siriStart(): Map<Any?, Any?> = client.request("_siriStart")
+
+    suspend fun siriStop(): Map<Any?, Any?> = client.request("_siriStop")
+
+    /**
+     * One `_siA` event: [frames] concatenated in key 3, [seconds] since
+     * `_siriStart` in key 4, and a {1: size, 2: offset} entry per frame in key 5.
+     */
+    fun siriAudio(frames: List<ByteArray>, seconds: Double) {
+        val descriptors = ArrayList<Map<Int, Int>>(frames.size)
+        var offset = 0
+        for (f in frames) {
+            descriptors += mapOf(1 to f.size, 2 to offset)
+            offset += f.size
+        }
+        val payload = ByteArray(offset)
+        var pos = 0
+        for (f in frames) { f.copyInto(payload, pos); pos += f.size }
+        client.sendEvent("_siA", mapOf(3 to payload, 4 to seconds, 5 to descriptors))
+    }
+
     suspend fun buttonDown(button: Button) = hid(button, down = true)
     suspend fun buttonUp(button: Button) = hid(button, down = false)
 

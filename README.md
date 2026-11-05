@@ -82,9 +82,10 @@ Each vendored module keeps its upstream licence and a `NOTICE.md` listing local 
 Hold the microphone button to talk. On Google TV the phone microphone is streamed to the
 assistant (16-bit mono 8 kHz PCM over the remote protocol's voice channel, as androidtvremote2
 does); the first press asks for microphone access. On Apple TV the button holds Siri like the
-Siri Remote. **Experimental:** with a second, voice-only AirPlay pairing (a code on the TV), the
-app also registers as a Media Remote Protocol voice input device and streams Opus audio, using
-the message definitions in pyatv. This is unproven on current tvOS; the log records each step.
+Siri Remote. **Experimental:** the phone microphone is also streamed to Siri over Companion
+Link, the way the iPhone's Control Center remote does it (`_siriStart`, `_siA` events of Opus
+8 kHz frames, `_siriStop`; message layout from captures in pyatv issues #2325 and #2875). Publicly
+this has opened Siri but not had speech recognised from a non-Apple client; the log records each step.
 
 ## Diagnostics
 

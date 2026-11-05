@@ -43,6 +43,12 @@ class CompanionClient(
     private val pending = ConcurrentHashMap<Any, CompletableDeferred<Map<Any?, Any?>>>()
 
     var onEvent: ((String, Map<Any?, Any?>) -> Unit)? = null
+
+    /**
+     * Requests the device sends to us (local change). Return the response
+     * content, or null to answer "No request handler" as iOS does.
+     */
+    var onRequest: ((String, Map<Any?, Any?>) -> Map<String, Any?>?)? = null
     var onDisconnect: ((Throwable?) -> Unit)? = null
 
     val isConnected: Boolean get() = connection.isConnected
@@ -113,6 +119,23 @@ class CompanionClient(
                         @Suppress("UNCHECKED_CAST")
                         onEvent?.invoke(name, (map["_c"] as? Map<Any?, Any?>) ?: emptyMap())
                     }
+                    MSG_REQUEST -> {
+                        val name = map["_i"] as? String ?: return
+                        @Suppress("UNCHECKED_CAST")
+                        val content = (map["_c"] as? Map<Any?, Any?>) ?: emptyMap()
+                        val reply = runCatching { onRequest?.invoke(name, content) }.getOrNull()
+                        val response = LinkedHashMap<String, Any?>()
+                        if (reply == null) {
+                            response["_em"] = "No request handler"
+                            response["_ec"] = 58822
+                            response["_ed"] = "RPErrorDomain"
+                        }
+                        response["_c"] = reply ?: emptyMap<String, Any?>()
+                        response["_t"] = MSG_RESPONSE
+                        response["_x"] = map["_x"]
+                        Log.d { "answering device request $name (${if (reply == null) "no handler" else "ok"})" }
+                        runCatching { connection.send(FrameType.E_OPACK, Opack.pack(response)) }
+                    }
                     MSG_RESPONSE -> {
                         val id = (map["_x"] as? Long)?.toInt() ?: return
                         pending.remove(id)?.complete(map)
@@ -158,7 +181,7 @@ class CompanionClient(
     }
 
     /** Fire-and-forget event; the device sends no reply. */
-    fun sendEvent(identifier: String, content: Map<String, Any?> = emptyMap()) {
+    fun sendEvent(identifier: String, content: Map<out Any, Any?> = emptyMap()) {
         connection.send(
             FrameType.E_OPACK,
             Opack.pack(

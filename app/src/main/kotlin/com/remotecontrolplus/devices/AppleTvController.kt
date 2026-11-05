@@ -15,11 +15,8 @@ import com.remotecontrolplus.core.HoldableAssistant
 import com.remotecontrolplus.core.OpusEncoder
 import com.remotecontrolplus.core.VoiceCapable
 import com.remotecontrolplus.core.VoicePairable
-import com.remotecontrolplus.core.VoicePairingRequired
 import dev.atvremote.protocol.airplay.AirPlayAuth
 import dev.atvremote.protocol.airplay.AirPlayConnection
-import dev.atvremote.protocol.airplay.Ap2Session
-import dev.atvremote.protocol.mrp.MrpVoice
 import dev.atvremote.protocol.companion.AppleTvRemote
 import dev.atvremote.protocol.companion.Button
 import dev.atvremote.protocol.companion.CompanionClient
@@ -27,7 +24,6 @@ import dev.atvremote.protocol.hap.Credentials
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -131,7 +127,18 @@ class AppleTvController(
             if (!caps.volume) _volume.value = null else scope.launch { refreshVolume() }
         }
         // TVSystemStatus: 1 asleep, 2 screensaver, 3 awake, 4 idle (pyatv SystemStatus).
+        r.onRequest = { name, content ->
+            logSiriTraffic("request", name, content)
+            if (name == "_siriEndpoint") {
+                endpointRequested = true
+                emptyMap()
+            } else {
+                Diagnostics.log("appletv", "unhandled request from TV: $name")
+                null
+            }
+        }
         r.onEvent = { name, content ->
+            logSiriTraffic("event", name, content)
             if (name == "TVSystemStatus") {
                 val s = (content["state"] as? Number)?.toInt()
                 Diagnostics.log("appletv", "system status $s")
@@ -159,9 +166,6 @@ class AppleTvController(
     }
 
     override fun disconnect() {
-        ap2?.close()
-        ap2 = null
-        voiceDeviceId = null
         _powerState.value = null
         remote?.close()
         remote = null
@@ -241,146 +245,96 @@ class AppleTvController(
 
 
     // ------------------------------------------------- Siri voice (experimental)
-    // Siri audio over the MRP channel tunnelled through AirPlay: register as a
-    // voice input device, hold Siri, mark recording, stream Opus packets. The
-    // messages come from pyatv's protobuf definitions; no public client is known
-    // to have used them on current tvOS, so every step is logged.
+    // Over Companion Link, as the iPhone's Control Center remote does it
+    // (captures in pyatv issues #2325 and #2875): Siri held via _hidC, then
+    // _siriStart, then _siA events carrying Opus frames, then _siriStop. The
+    // captured frames are Opus SILK narrowband, 8 kHz mono, 20 ms (TOC 0x48).
+    // Publicly, replaying this opened Siri and moved the waveform, but no
+    // speech was recognised, so every step is logged.
 
-    override val voiceSampleRate = MrpVoice.SAMPLE_RATE
-    override val voiceChunkBytes = MrpVoice.FRAME_SAMPLES * 2
+    override val voiceSampleRate = VOICE_RATE
+    override val voiceChunkBytes = VOICE_FRAME_SAMPLES * 2
 
-    private var ap2: Ap2Session? = null
-    private var voiceDeviceId: Int? = null
     private var encoder: OpusEncoder? = null
-    private var sampleTime = 0L
-    private var packetsSent = 0
-
-    private val sessionLock = kotlinx.coroutines.sync.Mutex()
-
-    /**
-     * Flow confirmed on tvOS 27: press Siri over MRP, the TV answers
-     * SetRecordingState(Recording), audio is accepted, release, the TV answers
-     * NotRecording. Siri still showed nothing, so the audio format is the open
-     * question: holds alternate between plain 16-bit PCM and Opus, and the
-     * voice device is re-registered when the format changes.
-     */
+    private var siriStartNanos = 0L
+    private val unsent = ArrayList<ByteArray>()
+    private var framesSent = 0
+    private var eventsSent = 0
+    private var bytesSent = 0
     private var holdCount = 0
-    private var format = MrpVoice.Format.OPUS
+    @Volatile private var endpointRequested = false
 
-    /** Packing experiments, one per hold (Opus, as Apple's capture registers). */
-    private enum class Variant(val label: String, val packing: MrpVoice.Packing, val batch: Int) {
-        FIXED("fixed-length packets, 1 per message", MrpVoice.Packing(variableFrames = 0), 1),
-        BATCH5("fixed-length packets, 5 per message", MrpVoice.Packing(variableFrames = 0), 5),
-        CLOCK("fixed-length, clock-time timestamps", MrpVoice.Packing(variableFrames = 0, clockTimestamp = true), 1),
-        NO_FORMAT("fixed-length, no format inside each message", MrpVoice.Packing(variableFrames = 0, formatInBuffer = false), 1),
-    }
-    private var variant = Variant.FIXED
-    private var registeredFormat: MrpVoice.Format? = null
-
-    /** True once the TV has said Recording during this hold. */
-    @Volatile private var tvRecording = false
-    @Volatile private var tvSaidStop = false
-    private val pending = java.util.ArrayDeque<ByteArray>()
-    private var unsentTail: List<ByteArray> = emptyList()
-
-    private suspend fun ensureSession(creds: Credentials): Ap2Session = sessionLock.withLock {
-        ap2?.takeIf { it.isConnected }?.let { return@withLock it }
-        Diagnostics.log("siri-voice", "opening AirPlay session to ${device.host}:7000")
-        val session = Ap2Session(device.host, creds, scope, "Remote Control Plus")
-        session.onDisconnect = {
-            Diagnostics.log("siri-voice", "AirPlay session closed: ${it?.message}")
-            ap2 = null
-            voiceDeviceId = null
-            registeredFormat = null
+    /** Log anything Siri-related the Apple TV says to us during a hold. */
+    private fun logSiriTraffic(kind: String, name: String, content: Map<Any?, Any?>) {
+        if (name.startsWith("_si", ignoreCase = true) || name.contains("siri", ignoreCase = true)) {
+            Diagnostics.log("siri-voice", "TV $kind $name: $content")
         }
-        session.onRecordingState = { state, error ->
-            Diagnostics.log("siri-voice", "TV recording state: ${state ?: "none"}${error?.let { " error=$it" } ?: ""} (${packetsSent} blocks sent so far)")
-            when (state) {
-                MrpVoice.RECORDING -> tvRecording = true
-                MrpVoice.NOT_RECORDING -> { tvRecording = false; tvSaidStop = true }
-            }
-        }
-        session.connect()
-        ap2 = session
-        Diagnostics.log("siri-voice", "AirPlay session up; MRP tunnel ready")
-        session
-    }
-
-    private fun sendSiriKey(session: Ap2Session, down: Boolean) {
-        session.sendMrp(MrpVoice.hidEvent(MrpVoice.SIRI_USAGE_PAGE, MrpVoice.SIRI_USAGE, down))
-        session.sendMrp(MrpVoice.generic())
     }
 
     override suspend fun beginVoice(): Int {
-        if (remote == null) throw NotConnectedException()
-        val creds = airplayCredentials?.let { runCatching { Credentials.parse(it) }.getOrNull() }
-            ?: throw VoicePairingRequired()
-        val session = ensureSession(creds)
-        variant = Variant.entries[holdCount % Variant.entries.size]
-        format = MrpVoice.Format.OPUS
+        val r = remote ?: throw NotConnectedException()
         holdCount++
-        if (registeredFormat != format || voiceDeviceId == null) {
-            voiceDeviceId = session.registerVoiceInput(format)
-            registeredFormat = format
-            Diagnostics.log("siri-voice", "registered voice input device $voiceDeviceId for $format")
-        }
-        tvRecording = false
-        tvSaidStop = false
-        synchronized(pending) { pending.clear() }
-        unsentTail = emptyList()
-        encoder = if (format == MrpVoice.Format.OPUS) OpusEncoder(MrpVoice.SAMPLE_RATE) else null
-        sampleTime = 0L
-        packetsSent = 0
-        Diagnostics.log("siri-voice", "hold #$holdCount: ${variant.label}; Siri key down over MRP, waiting for the TV")
-        sendSiriKey(session, down = true)
-        return voiceDeviceId ?: 0
+        endpointRequested = false
+        synchronized(unsent) { unsent.clear() }
+        framesSent = 0; eventsSent = 0; bytesSent = 0
+        encoder = OpusEncoder(VOICE_RATE, VOICE_BITRATE)
+        r.buttonDown(Button.SIRI)
+        Diagnostics.log("siri-voice", "hold #$holdCount: Siri button down (_hidC 10); sending _siriStart")
+        val response = runCatching { r.siriStart() }
+        siriStartNanos = System.nanoTime()
+        response
+            .onSuccess { Diagnostics.log("siri-voice", "_siriStart answered: ${it["_c"]}") }
+            .onFailure { Diagnostics.log("siri-voice", "_siriStart failed: ${it.message}") }
+        return holdCount
     }
 
     override suspend fun sendVoice(session: Int, pcm: ByteArray) {
-        val s = ap2 ?: throw NotConnectedException()
-        val blocks: List<ByteArray> = when (format) {
-            MrpVoice.Format.OPUS -> encoder?.encode(pcm) ?: return
-            MrpVoice.Format.LPCM -> listOf(pcm)
+        val r = remote ?: throw NotConnectedException()
+        val packets = encoder?.encode(pcm) ?: return
+        if (packets.isEmpty()) return
+        if (framesSent == 0 && synchronized(unsent) { unsent.isEmpty() }) {
+            val toc = packets[0][0].toInt() and 0xFF
+            Diagnostics.log(
+                "siri-voice",
+                "first Opus packet: ${packets[0].size} bytes, TOC 0x%02x (config %d, %s; capture expects 0x48 = config 9, SILK NB 20 ms mono)"
+                    .format(toc, toc shr 3, if (toc and 0x04 != 0) "stereo" else "mono"),
+            )
         }
-        if (!tvRecording) {
-            if (tvSaidStop) return
-            // Hold up to ~3 s of audio until the TV asks for it.
-            synchronized(pending) {
-                blocks.forEach { pending.addLast(it) }
-                while (pending.size > 150) pending.removeFirst()
-            }
-            return
+        val batch: List<ByteArray>? = synchronized(unsent) {
+            unsent += packets
+            if (unsent.size >= FRAMES_PER_EVENT) unsent.toList().also { unsent.clear() } else null
         }
-        val backlog = synchronized(pending) { pending.toList().also { pending.clear() } }
-        if (backlog.isNotEmpty()) Diagnostics.log("siri-voice", "TV is recording; flushing ${backlog.size} buffered blocks")
-        val queue = backlog + blocks
-        synchronized(pending) {
-            // Keep a partial batch for next time so every message has `batch` packets.
-            pending.clear()
+        if (batch != null) sendBatch(r, batch)
+    }
+
+    private fun sendBatch(r: AppleTvRemote, frames: List<ByteArray>) {
+        val seconds = (System.nanoTime() - siriStartNanos) / 1_000_000_000.0
+        r.siriAudio(frames, seconds)
+        framesSent += frames.size
+        eventsSent++
+        bytesSent += frames.sumOf { it.size }
+        if (eventsSent == 1) {
+            Diagnostics.log("siri-voice", "first _siA sent: ${frames.size} frames, sizes ${frames.map { it.size }}, t=%.3f s".format(seconds))
         }
-        val ready = (unsentTail + queue)
-        val full = ready.size - ready.size % variant.batch
-        for (chunk in ready.subList(0, full).chunked(variant.batch)) {
-            s.sendVoicePackets(chunk, sampleTime, format, variant.packing)
-            sampleTime += MrpVoice.FRAME_SAMPLES.toLong() * chunk.size
-            packetsSent += chunk.size
-            if (packetsSent == chunk.size) Diagnostics.log("siri-voice", "first message sent: ${chunk.size} packet(s), ${chunk.sumOf { it.size }} bytes")
-        }
-        unsentTail = ready.subList(full, ready.size).toList()
     }
 
     override suspend fun endVoice(session: Int) {
-        val s = ap2
-        runCatching { if (s != null) sendSiriKey(s, down = false) }
+        val r = remote
+        val rest = synchronized(unsent) { unsent.toList().also { unsent.clear() } }
+        if (r != null && rest.isNotEmpty()) runCatching { sendBatch(r, rest) }
         encoder?.release()
         encoder = null
-        val buffered = synchronized(pending) { pending.size.also { pending.clear() } }
+        if (r != null) {
+            runCatching { r.siriStop() }
+                .onSuccess { Diagnostics.log("siri-voice", "_siriStop answered: ${it["_c"]}") }
+                .onFailure { Diagnostics.log("siri-voice", "_siriStop failed: ${it.message}") }
+            runCatching { r.buttonUp(Button.SIRI) }
+        }
         Diagnostics.log(
             "siri-voice",
-            "hold #$holdCount (${variant.name}): Siri key up; sent $packetsSent packets, $buffered never requested; TV said recording=$tvRecording stop=$tvSaidStop",
+            "hold #$holdCount: released; $eventsSent _siA events, $framesSent frames, $bytesSent bytes; TV asked for endpoint=$endpointRequested",
         )
     }
-
 
     override suspend fun beginVoicePairing(): PairingHandle {
         val connection = AirPlayConnection(device.host, 7000)
@@ -416,6 +370,10 @@ class AppleTvController(
     }
 
     companion object {
+        const val VOICE_RATE = 8_000
+        const val VOICE_FRAME_SAMPLES = 160
+        const val VOICE_BITRATE = 16_000
+        const val FRAMES_PER_EVENT = 5
         fun airplayKey(device: TvDevice) = device.id + "#airplay"
     }
     /** Siri is held like the Siri Remote: down on press, up on release. */
