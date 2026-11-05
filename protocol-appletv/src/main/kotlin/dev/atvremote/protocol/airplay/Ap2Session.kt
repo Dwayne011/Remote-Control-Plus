@@ -48,6 +48,9 @@ class Ap2Session(
     /** Voice device id handed out by RegisterVoiceInputDeviceResponse (Remote Control Plus addition). */
     @Volatile private var voiceRegistration: kotlinx.coroutines.CompletableDeferred<Pair<Int, Int>>? = null
 
+    /** The Apple TV's own SetRecordingState (1 recording, 2 not recording), with any error code. */
+    var onRecordingState: ((state: Long?, errorCode: Long?) -> Unit)? = null
+
     suspend fun connect() {
         val conn = AirPlayConnection(host, AIRPLAY_PORT)
         conn.connect()
@@ -185,6 +188,13 @@ class Ap2Session(
         }
         when (type) {
             Mrp.TYPE_SET_STATE -> applySetState(message.message(Mrp.EXT_SET_STATE))
+            dev.atvremote.protocol.mrp.MrpVoice.TYPE_SET_RECORDING_STATE -> {
+                val st = message.message(dev.atvremote.protocol.mrp.MrpVoice.EXT_SET_RECORDING_STATE)
+                val state = st?.varint(1)
+                val error = message.varint(3)
+                Log.d { "Apple TV set recording state: state=$state errorCode=$error identifier=${message.string(Mrp.FIELD_IDENTIFIER)}" }
+                onRecordingState?.invoke(state, error)
+            }
             dev.atvremote.protocol.mrp.MrpVoice.TYPE_REGISTER_VOICE_INPUT_DEVICE_RESPONSE -> {
                 val r = message.message(dev.atvremote.protocol.mrp.MrpVoice.EXT_REGISTER_VOICE_INPUT_DEVICE_RESPONSE)
                 val id = (r?.varint(1) ?: -1L).toInt()

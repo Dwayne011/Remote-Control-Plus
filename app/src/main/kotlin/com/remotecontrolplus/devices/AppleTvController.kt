@@ -258,18 +258,23 @@ class AppleTvController(
     private val sessionLock = kotlinx.coroutines.sync.Mutex()
 
     /**
-     * How Siri is triggered. The first experiment (Companion HID Siri) was
-     * acknowledged but Siri never appeared, so each hold now tries the next
-     * method and the log says which one was used.
+     * How a hold is run. Earlier tests showed the Apple TV answers an MRP
+     * Siri key press with its own SetRecordingState, so it may be the TV that
+     * decides when recording starts. Both orders are tried in turn:
+     *  - WAIT_FOR_TV: press Siri, buffer the microphone, send audio only once
+     *    the TV says Recording, stop when it says NotRecording.
+     *  - CLIENT_STATE: press Siri and also send our own SetRecordingState,
+     *    streaming immediately (the previous behaviour), plus the TV's signals.
      */
-    private enum class SiriTrigger(val label: String) {
-        MRP_HID("MRP HID event, consumer page 12 usage 0x04"),
-        MRP_BUTTON("MRP button event, consumer page 12 usage 0x04"),
-        ALL("MRP HID + MRP button + Companion Siri together"),
-    }
+    private enum class VoiceFlow { WAIT_FOR_TV, CLIENT_STATE }
 
     private var holdCount = 0
-    private var trigger = SiriTrigger.MRP_HID
+    private var flow = VoiceFlow.WAIT_FOR_TV
+
+    /** True once the TV has said Recording during this hold. */
+    @Volatile private var tvRecording = false
+    @Volatile private var tvSaidStop = false
+    private val pending = java.util.ArrayDeque<ByteArray>()
 
     private suspend fun ensureSession(creds: Credentials): Ap2Session = sessionLock.withLock {
         ap2?.takeIf { it.isConnected }?.let { return@withLock it }
@@ -280,6 +285,13 @@ class AppleTvController(
             ap2 = null
             voiceDeviceId = null
         }
+        session.onRecordingState = { state, error ->
+            Diagnostics.log("siri-voice", "TV recording state: ${state ?: "none"}${error?.let { " error=$it" } ?: ""} (${packetsSent} packets sent so far)")
+            when (state) {
+                MrpVoice.RECORDING -> tvRecording = true
+                MrpVoice.NOT_RECORDING -> { tvRecording = false; tvSaidStop = true }
+            }
+        }
         session.connect()
         ap2 = session
         Diagnostics.log("siri-voice", "AirPlay session up; MRP tunnel ready")
@@ -287,15 +299,12 @@ class AppleTvController(
     }
 
     private fun sendSiriKey(session: Ap2Session, down: Boolean) {
-        val page = MrpVoice.SIRI_USAGE_PAGE
-        val usage = MrpVoice.SIRI_USAGE
-        if (trigger == SiriTrigger.MRP_HID || trigger == SiriTrigger.ALL) session.sendMrp(MrpVoice.hidEvent(page, usage, down))
-        if (trigger == SiriTrigger.MRP_BUTTON || trigger == SiriTrigger.ALL) session.sendMrp(MrpVoice.buttonEvent(page, usage, down))
+        session.sendMrp(MrpVoice.hidEvent(MrpVoice.SIRI_USAGE_PAGE, MrpVoice.SIRI_USAGE, down))
         session.sendMrp(MrpVoice.generic())
     }
 
     override suspend fun beginVoice(): Int {
-        val r = remote ?: throw NotConnectedException()
+        if (remote == null) throw NotConnectedException()
         val creds = airplayCredentials?.let { runCatching { Credentials.parse(it) }.getOrNull() }
             ?: throw VoicePairingRequired()
         val session = ensureSession(creds)
@@ -303,23 +312,40 @@ class AppleTvController(
             voiceDeviceId = it
             Diagnostics.log("siri-voice", "registered as voice input device $it")
         }
-        trigger = SiriTrigger.entries[holdCount % SiriTrigger.entries.size]
+        flow = VoiceFlow.entries[holdCount % VoiceFlow.entries.size]
         holdCount++
-        Diagnostics.log("siri-voice", "hold #$holdCount: trigger = ${trigger.label}")
+        tvRecording = false
+        tvSaidStop = false
+        synchronized(pending) { pending.clear() }
         encoder = OpusEncoder(MrpVoice.SAMPLE_RATE)
         sampleTime = 0L
         packetsSent = 0
+        Diagnostics.log("siri-voice", "hold #$holdCount: flow = $flow; Siri key down over MRP")
         sendSiriKey(session, down = true)
-        if (trigger == SiriTrigger.ALL) r.buttonDown(Button.SIRI)
-        session.setRecording(true)
-        Diagnostics.log("siri-voice", "Siri key down; recording state -> Recording")
+        if (flow == VoiceFlow.CLIENT_STATE) {
+            session.setRecording(true)
+            Diagnostics.log("siri-voice", "sent our recording state -> Recording")
+        }
         return id
     }
 
     override suspend fun sendVoice(session: Int, pcm: ByteArray) {
         val s = ap2 ?: throw NotConnectedException()
         val enc = encoder ?: return
-        for (packet in enc.encode(pcm)) {
+        val packets = enc.encode(pcm)
+        val streaming = flow == VoiceFlow.CLIENT_STATE || tvRecording
+        if (!streaming) {
+            if (tvSaidStop) return
+            // Hold up to ~3 s of audio until the TV asks for it.
+            synchronized(pending) {
+                packets.forEach { pending.addLast(it) }
+                while (pending.size > 150) pending.removeFirst()
+            }
+            return
+        }
+        val backlog = synchronized(pending) { pending.toList().also { pending.clear() } }
+        if (backlog.isNotEmpty()) Diagnostics.log("siri-voice", "TV is recording; flushing ${backlog.size} buffered packets")
+        for (packet in backlog + packets) {
             s.sendVoicePacket(packet, sampleTime)
             sampleTime += MrpVoice.FRAME_SAMPLES
             packetsSent++
@@ -329,12 +355,15 @@ class AppleTvController(
 
     override suspend fun endVoice(session: Int) {
         val s = ap2
-        runCatching { s?.setRecording(false) }
+        if (flow == VoiceFlow.CLIENT_STATE) runCatching { s?.setRecording(false) }
         runCatching { if (s != null) sendSiriKey(s, down = false) }
-        if (trigger == SiriTrigger.ALL) runCatching { remote?.buttonUp(Button.SIRI) }
         encoder?.release()
         encoder = null
-        Diagnostics.log("siri-voice", "hold #$holdCount (${trigger.name}): recording -> NotRecording, Siri key up after $packetsSent packets")
+        val buffered = synchronized(pending) { pending.size.also { pending.clear() } }
+        Diagnostics.log(
+            "siri-voice",
+            "hold #$holdCount ($flow): Siri key up; sent $packetsSent packets, $buffered never requested by the TV; TV said recording=$tvRecording stop=$tvSaidStop",
+        )
     }
 
 
