@@ -19,6 +19,9 @@ object Diagnostics {
     data class Entry(val time: Long, val tag: String, val message: String, val error: String? = null)
 
     private const val LIMIT = 1500
+
+    /** Long wire dumps (the Apple TV's 7 KB system info) would swamp a shared log. */
+    private const val MAX_LINE = 240
     private val _entries = MutableStateFlow<List<Entry>>(emptyList())
     val entries: StateFlow<List<Entry>> = _entries.asStateFlow()
 
@@ -27,8 +30,8 @@ object Diagnostics {
         val entry = Entry(
             time = System.currentTimeMillis(),
             tag = tag,
-            message = message,
-            error = error?.let { "${it.javaClass.simpleName}: ${it.message}\n" + it.stackTraceToString().take(1500) },
+            message = if (message.length > MAX_LINE) message.take(MAX_LINE) + " … (${message.length} chars)" else message,
+            error = error?.let { "${it.javaClass.simpleName}: ${it.message}\n" + it.stackTraceToString().lines().take(6).joinToString("\n") },
         )
         _entries.value = (_entries.value + entry).takeLast(LIMIT)
         if (error != null) Log.w("RCP", "[$tag] $message", error) else Log.i("RCP", "[$tag] $message")
