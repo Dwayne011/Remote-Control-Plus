@@ -29,20 +29,27 @@ object MrpVoice {
     const val SAMPLE_RATE = 16000
     const val FRAME_SAMPLES = 320 // 20 ms
 
-    /** kAudioFormatOpus, the four-character code 'opus'. */
-    private const val FORMAT_OPUS = 0x6F707573L
+    /** Audio formats offered to the Apple TV. */
+    enum class Format { OPUS, LPCM }
 
-    /** AudioFormatSettings { formatSettingsPlistData = 1 } */
-    private fun formatSettings(): Protobuf.Builder = Protobuf.Builder().bytes(
-        1,
-        BinaryPlist.write(
-            linkedMapOf<Any?, Any?>(
-                "AVFormatIDKey" to FORMAT_OPUS,
-                "AVSampleRateKey" to SAMPLE_RATE.toDouble(),
-                "AVNumberOfChannelsKey" to 1L,
-            ),
-        ),
-    )
+    /** kAudioFormatOpus 'opus' and kAudioFormatLinearPCM 'lpcm' as four-character codes. */
+    private const val FORMAT_OPUS = 0x6F707573L
+    private const val FORMAT_LPCM = 0x6C70636DL
+
+    private fun formatSettings(format: Format): Protobuf.Builder {
+        val settings = linkedMapOf<Any?, Any?>(
+            "AVFormatIDKey" to if (format == Format.OPUS) FORMAT_OPUS else FORMAT_LPCM,
+            "AVSampleRateKey" to SAMPLE_RATE.toDouble(),
+            "AVNumberOfChannelsKey" to 1L,
+        )
+        if (format == Format.LPCM) {
+            settings["AVLinearPCMBitDepthKey"] = 16L
+            settings["AVLinearPCMIsFloatKey"] = false
+            settings["AVLinearPCMIsBigEndianKey"] = false
+            settings["AVLinearPCMIsNonInterleaved"] = false
+        }
+        return Protobuf.Builder().bytes(1, BinaryPlist.write(settings))
+    }
 
 
     // --- Siri key over MRP (pyatv messages.py: send_hid_event / send_button) ---
@@ -93,52 +100,64 @@ object MrpVoice {
         .varint(Mrp.FIELD_TYPE, TYPE_GENERIC.toLong())
         .string(Mrp.FIELD_UNIQUE_IDENTIFIER, uid())
         .build()
-    fun registerVoiceInputDevice(): ByteArray {
+    fun registerVoiceInputDevice(format: Format): ByteArray {
         // VoiceInputDeviceDescriptor { defaultFormat = 1; repeated supportedFormats = 2 }
         val descriptor = Protobuf.Builder()
-            .message(1, formatSettings())
-            .message(2, formatSettings())
+            .message(1, formatSettings(format))
+            .message(2, formatSettings(format))
         return Protobuf.Builder()
             .varint(Mrp.FIELD_TYPE, TYPE_REGISTER_VOICE_INPUT_DEVICE.toLong())
-            .string(Mrp.FIELD_IDENTIFIER, "register-voice")
+            .string(Mrp.FIELD_IDENTIFIER, uid())
             .message(
                 EXT_REGISTER_VOICE_INPUT_DEVICE,
                 Protobuf.Builder().message(1, descriptor),
             )
+            .string(Mrp.FIELD_UNIQUE_IDENTIFIER, uid())
             .build()
     }
 
     fun setRecordingState(state: Long): ByteArray = Protobuf.Builder()
         .varint(Mrp.FIELD_TYPE, TYPE_SET_RECORDING_STATE.toLong())
         .message(EXT_SET_RECORDING_STATE, Protobuf.Builder().varint(1, state))
+        .string(Mrp.FIELD_UNIQUE_IDENTIFIER, uid())
         .build()
 
     /**
-     * One Opus packet (20 ms) as SendVoiceInputMessage { dataBlock = 1 }:
+     * One 20 ms block as SendVoiceInputMessage { dataBlock = 1 }:
      * AudioDataBlock { buffer = 1; time = 2; gain = 3 }.
+     * Opus: one packet with a packet description. LPCM: 320 one-frame
+     * packets of 2 bytes, no descriptions (constant-size format).
      */
-    fun sendVoiceInput(packet: ByteArray, sampleTime: Long): ByteArray {
-        val description = Protobuf.Builder()
-            .varint(1, 0)                          // startOffset
-            .varint(2, FRAME_SAMPLES.toLong())     // variableFramesInPacket
-            .varint(3, packet.size.toLong())       // dataByteSize
-        val buffer = Protobuf.Builder()
-            .message(1, formatSettings())          // formatSettings
-            .varint(2, 1)                          // packetCapacity
-            .varint(3, packet.size.toLong())       // maximumPacketSize
-            .varint(4, 1)                          // packetCount
-            .bytes(5, packet)                      // contents
-            .message(6, description)               // packetDescriptions
+    fun sendVoiceInput(format: Format, contents: ByteArray, sampleTime: Long): ByteArray {
+        val buffer = Protobuf.Builder().message(1, formatSettings(format))
+        if (format == Format.OPUS) {
+            val description = Protobuf.Builder()
+                .varint(1, 0)                          // startOffset
+                .varint(2, FRAME_SAMPLES.toLong())     // variableFramesInPacket
+                .varint(3, contents.size.toLong())     // dataByteSize
+            buffer.varint(2, 1)                        // packetCapacity
+                .varint(3, contents.size.toLong())     // maximumPacketSize
+                .varint(4, 1)                          // packetCount
+                .bytes(5, contents)                    // contents
+                .message(6, description)               // packetDescriptions
+        } else {
+            val frames = (contents.size / 2).toLong()
+            buffer.varint(2, frames)                   // packetCapacity
+                .varint(3, 2)                          // maximumPacketSize
+                .varint(4, frames)                     // packetCount
+                .bytes(5, contents)                    // contents
+        }
         val time = Protobuf.Builder()
-            .double(1, sampleTime.toDouble())      // timestamp, in samples
-            .double(2, SAMPLE_RATE.toDouble())     // sampleRate
+            .double(1, sampleTime.toDouble())          // timestamp, in samples
+            .double(2, SAMPLE_RATE.toDouble())         // sampleRate
         val block = Protobuf.Builder()
             .message(1, buffer)
             .message(2, time)
-            .double(3, 1.0)                        // gain
+            .double(3, 1.0)                            // gain
         return Protobuf.Builder()
             .varint(Mrp.FIELD_TYPE, TYPE_SEND_VOICE_INPUT.toLong())
             .message(EXT_SEND_VOICE_INPUT, Protobuf.Builder().message(1, block))
+            .string(Mrp.FIELD_UNIQUE_IDENTIFIER, uid())
             .build()
     }
 }

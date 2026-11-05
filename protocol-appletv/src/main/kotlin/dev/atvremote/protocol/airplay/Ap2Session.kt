@@ -333,11 +333,14 @@ class Ap2Session(
     // ---------------------------------------------- voice (Remote Control Plus)
 
     /** Register as a voice input device; returns the device id, or throws. */
-    suspend fun registerVoiceInput(timeoutMs: Long = 4000): Int {
+    suspend fun registerVoiceInput(
+        format: dev.atvremote.protocol.mrp.MrpVoice.Format = dev.atvremote.protocol.mrp.MrpVoice.Format.OPUS,
+        timeoutMs: Long = 4000,
+    ): Int {
         val channel = dataChannel ?: error("AirPlay session not connected")
         val deferred = kotlinx.coroutines.CompletableDeferred<Pair<Int, Int>>()
         voiceRegistration = deferred
-        channel.sendProtobuf(dev.atvremote.protocol.mrp.MrpVoice.registerVoiceInputDevice())
+        channel.sendProtobuf(dev.atvremote.protocol.mrp.MrpVoice.registerVoiceInputDevice(format))
         val (id, error) = kotlinx.coroutines.withTimeoutOrNull(timeoutMs) { deferred.await() }
             ?: error("Apple TV did not answer the voice registration")
         voiceRegistration = null
@@ -360,9 +363,13 @@ class Ap2Session(
         (dataChannel ?: error("AirPlay session not connected")).sendProtobuf(message)
     }
 
-    fun sendVoicePacket(packet: ByteArray, sampleTime: Long) {
+    fun sendVoicePacket(
+        packet: ByteArray,
+        sampleTime: Long,
+        format: dev.atvremote.protocol.mrp.MrpVoice.Format = dev.atvremote.protocol.mrp.MrpVoice.Format.OPUS,
+    ) {
         val channel = dataChannel ?: error("AirPlay session not connected")
-        channel.sendProtobuf(dev.atvremote.protocol.mrp.MrpVoice.sendVoiceInput(packet, sampleTime))
+        channel.sendProtobuf(dev.atvremote.protocol.mrp.MrpVoice.sendVoiceInput(format, packet, sampleTime))
     }
 
     val isConnected: Boolean get() = dataChannel != null && connection != null

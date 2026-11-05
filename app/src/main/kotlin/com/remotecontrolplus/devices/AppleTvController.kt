@@ -258,18 +258,15 @@ class AppleTvController(
     private val sessionLock = kotlinx.coroutines.sync.Mutex()
 
     /**
-     * How a hold is run. Earlier tests showed the Apple TV answers an MRP
-     * Siri key press with its own SetRecordingState, so it may be the TV that
-     * decides when recording starts. Both orders are tried in turn:
-     *  - WAIT_FOR_TV: press Siri, buffer the microphone, send audio only once
-     *    the TV says Recording, stop when it says NotRecording.
-     *  - CLIENT_STATE: press Siri and also send our own SetRecordingState,
-     *    streaming immediately (the previous behaviour), plus the TV's signals.
+     * Flow confirmed on tvOS 27: press Siri over MRP, the TV answers
+     * SetRecordingState(Recording), audio is accepted, release, the TV answers
+     * NotRecording. Siri still showed nothing, so the audio format is the open
+     * question: holds alternate between plain 16-bit PCM and Opus, and the
+     * voice device is re-registered when the format changes.
      */
-    private enum class VoiceFlow { WAIT_FOR_TV, CLIENT_STATE }
-
     private var holdCount = 0
-    private var flow = VoiceFlow.WAIT_FOR_TV
+    private var format = MrpVoice.Format.LPCM
+    private var registeredFormat: MrpVoice.Format? = null
 
     /** True once the TV has said Recording during this hold. */
     @Volatile private var tvRecording = false
@@ -284,9 +281,10 @@ class AppleTvController(
             Diagnostics.log("siri-voice", "AirPlay session closed: ${it?.message}")
             ap2 = null
             voiceDeviceId = null
+            registeredFormat = null
         }
         session.onRecordingState = { state, error ->
-            Diagnostics.log("siri-voice", "TV recording state: ${state ?: "none"}${error?.let { " error=$it" } ?: ""} (${packetsSent} packets sent so far)")
+            Diagnostics.log("siri-voice", "TV recording state: ${state ?: "none"}${error?.let { " error=$it" } ?: ""} (${packetsSent} blocks sent so far)")
             when (state) {
                 MrpVoice.RECORDING -> tvRecording = true
                 MrpVoice.NOT_RECORDING -> { tvRecording = false; tvSaidStop = true }
@@ -308,61 +306,58 @@ class AppleTvController(
         val creds = airplayCredentials?.let { runCatching { Credentials.parse(it) }.getOrNull() }
             ?: throw VoicePairingRequired()
         val session = ensureSession(creds)
-        val id = voiceDeviceId ?: session.registerVoiceInput().also {
-            voiceDeviceId = it
-            Diagnostics.log("siri-voice", "registered as voice input device $it")
-        }
-        flow = VoiceFlow.entries[holdCount % VoiceFlow.entries.size]
+        format = MrpVoice.Format.entries[holdCount % MrpVoice.Format.entries.size]
         holdCount++
+        if (registeredFormat != format || voiceDeviceId == null) {
+            voiceDeviceId = session.registerVoiceInput(format)
+            registeredFormat = format
+            Diagnostics.log("siri-voice", "registered voice input device $voiceDeviceId for $format")
+        }
         tvRecording = false
         tvSaidStop = false
         synchronized(pending) { pending.clear() }
-        encoder = OpusEncoder(MrpVoice.SAMPLE_RATE)
+        encoder = if (format == MrpVoice.Format.OPUS) OpusEncoder(MrpVoice.SAMPLE_RATE) else null
         sampleTime = 0L
         packetsSent = 0
-        Diagnostics.log("siri-voice", "hold #$holdCount: flow = $flow; Siri key down over MRP")
+        Diagnostics.log("siri-voice", "hold #$holdCount: $format audio; Siri key down over MRP, waiting for the TV")
         sendSiriKey(session, down = true)
-        if (flow == VoiceFlow.CLIENT_STATE) {
-            session.setRecording(true)
-            Diagnostics.log("siri-voice", "sent our recording state -> Recording")
-        }
-        return id
+        return voiceDeviceId ?: 0
     }
 
     override suspend fun sendVoice(session: Int, pcm: ByteArray) {
         val s = ap2 ?: throw NotConnectedException()
-        val enc = encoder ?: return
-        val packets = enc.encode(pcm)
-        val streaming = flow == VoiceFlow.CLIENT_STATE || tvRecording
-        if (!streaming) {
+        val blocks: List<ByteArray> = when (format) {
+            MrpVoice.Format.OPUS -> encoder?.encode(pcm) ?: return
+            MrpVoice.Format.LPCM -> listOf(pcm)
+        }
+        if (!tvRecording) {
             if (tvSaidStop) return
             // Hold up to ~3 s of audio until the TV asks for it.
             synchronized(pending) {
-                packets.forEach { pending.addLast(it) }
+                blocks.forEach { pending.addLast(it) }
                 while (pending.size > 150) pending.removeFirst()
             }
             return
         }
         val backlog = synchronized(pending) { pending.toList().also { pending.clear() } }
-        if (backlog.isNotEmpty()) Diagnostics.log("siri-voice", "TV is recording; flushing ${backlog.size} buffered packets")
-        for (packet in backlog + packets) {
-            s.sendVoicePacket(packet, sampleTime)
+        if (backlog.isNotEmpty()) Diagnostics.log("siri-voice", "TV is recording; flushing ${backlog.size} buffered blocks")
+        for (block in backlog + blocks) {
+            s.sendVoicePacket(block, sampleTime, format)
             sampleTime += MrpVoice.FRAME_SAMPLES
             packetsSent++
-            if (packetsSent == 1) Diagnostics.log("siri-voice", "first Opus packet sent (${packet.size} bytes)")
+            if (packetsSent == 1) Diagnostics.log("siri-voice", "first $format block sent (${block.size} bytes)")
         }
     }
 
     override suspend fun endVoice(session: Int) {
         val s = ap2
-        if (flow == VoiceFlow.CLIENT_STATE) runCatching { s?.setRecording(false) }
         runCatching { if (s != null) sendSiriKey(s, down = false) }
         encoder?.release()
         encoder = null
         val buffered = synchronized(pending) { pending.size.also { pending.clear() } }
         Diagnostics.log(
             "siri-voice",
-            "hold #$holdCount ($flow): Siri key up; sent $packetsSent packets, $buffered never requested by the TV; TV said recording=$tvRecording stop=$tvSaidStop",
+            "hold #$holdCount ($format): Siri key up; sent $packetsSent blocks, $buffered never requested; TV said recording=$tvRecording stop=$tvSaidStop",
         )
     }
 
