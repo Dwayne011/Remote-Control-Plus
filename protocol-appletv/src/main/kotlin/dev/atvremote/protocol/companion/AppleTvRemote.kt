@@ -420,6 +420,19 @@ class AppleTvRemote(
         return current
     }
 
+
+    // ------------------------------------------------- power (Remote Control Plus)
+
+    /**
+     * Current system state, as pyatv's Companion power support asks for it:
+     * 1 asleep, 2 screensaver, 3 awake, 4 idle; null if the device does not say.
+     */
+    suspend fun fetchAttentionState(): Int? {
+        val response = client.request("FetchAttentionState")
+        @Suppress("UNCHECKED_CAST")
+        val content = response["_c"] as? Map<Any?, Any?> ?: return null
+        return (content["state"] as? Number)?.toInt()
+    }
     // -------------------------------------------------------------- events
 
     suspend fun subscribe(event: String) =

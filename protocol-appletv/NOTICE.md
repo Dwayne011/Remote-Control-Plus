@@ -12,3 +12,5 @@ Local changes relative to upstream:
 - `mrp/MrpVoice.kt` (new), `Protobuf.Builder.double`, and voice methods on `Ap2Session`:
   experimental Siri voice input over the AirPlay-tunnelled MRP channel, using the message
   definitions from pyatv's protobuf files. Untested against real hardware upstream.
+- `AppleTvRemote.fetchAttentionState()`: the current sleep/awake state on demand, using the
+  Companion "FetchAttentionState" request that pyatv's power support uses.

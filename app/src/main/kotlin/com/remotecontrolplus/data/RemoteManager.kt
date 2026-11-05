@@ -141,8 +141,17 @@ class RemoteManager(
         repository.setPadMode(mode)
     }
 
-    fun reconnect(): Job = scope.launch {
-        val device = selected.value ?: return@launch
+    private var reconnectJob: Job? = null
+
+    fun reconnect(): Job {
+        // Two triggers (pop-up and foreground) can land in the same instant;
+        // a second parallel connection just races the first and is thrown away.
+        reconnectJob?.takeIf { it.isActive }?.let { return it }
+        return scope.launch { doReconnect() }.also { reconnectJob = it }
+    }
+
+    private suspend fun doReconnect() {
+        val device = selected.value ?: return
         _controller.value?.disconnect()
         _controller.value = controllers.create(device, credentials.get(device.id))
         _controller.value?.let { c -> withContext(Dispatchers.IO) { c.connect() } }

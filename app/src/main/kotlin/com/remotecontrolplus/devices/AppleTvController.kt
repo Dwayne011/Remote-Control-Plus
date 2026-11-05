@@ -111,6 +111,12 @@ class AppleTvController(
         )
     }
 
+
+    private fun powerFromStatus(state: Int?): Boolean? = when (state) {
+        1 -> false
+        2, 3, 4 -> true
+        else -> null
+    }
     private suspend fun attempt(credentials: Credentials, port: Int) {
         Diagnostics.log("appletv", "connecting to ${device.host}:$port with stored credentials")
         val r = AppleTvRemote(device.host, port, credentials, scope)
@@ -124,16 +130,12 @@ class AppleTvController(
             Diagnostics.log("appletv", "device capabilities: volume=${caps.volume} play=${caps.play}")
             if (!caps.volume) _volume.value = null else scope.launch { refreshVolume() }
         }
-        // TVSystemStatus: 1 = asleep, 2 = waking, 3 = awake (observed on tvOS 27).
+        // TVSystemStatus: 1 asleep, 2 screensaver, 3 awake, 4 idle (pyatv SystemStatus).
         r.onEvent = { name, content ->
             if (name == "TVSystemStatus") {
                 val s = (content["state"] as? Number)?.toInt()
                 Diagnostics.log("appletv", "system status $s")
-                _powerState.value = when (s) {
-                    1 -> false
-                    2, 3 -> true
-                    else -> _powerState.value
-                }
+                powerFromStatus(s)?.let { _powerState.value = it }
             }
         }
         r.onTextFocus = { session ->
@@ -145,7 +147,13 @@ class AppleTvController(
         remote = r
         r.connect()
         rememberPort(device, port)
-        if (_powerState.value == null) _powerState.value = true
+        // A sleeping Apple TV still accepts connections, so ask rather than assume.
+        r.subscribe("TVSystemStatus")
+        val attention = runCatching { r.fetchAttentionState() }
+            .onFailure { Diagnostics.log("appletv", "attention state request failed", it) }
+            .getOrNull()
+        _powerState.value = powerFromStatus(attention)
+        Diagnostics.log("appletv", "attention state on connect: $attention -> on=${_powerState.value}")
         Diagnostics.log("appletv", "connected and session started")
         _state.value = ConnectionState.Connected
     }

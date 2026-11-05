@@ -48,13 +48,17 @@ object Diagnostics {
         else -> secret.take(4) + "…" + secret.takeLast(2) + " (${secret.length} chars)"
     }
 
-    fun export(): String {
+    /** Raw protocol traffic: hex dumps and decoded frames, useful but bulky. */
+    fun isWireDetail(e: Entry): Boolean =
+        e.tag == "atv-wire" && (e.message.startsWith(">>") || e.message.startsWith("<<") || e.message.startsWith("read loop"))
+
+    fun export(includeWire: Boolean = true): String {
         val fmt = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
         return buildString {
             appendLine("Remote Control Plus diagnostics")
             appendLine("Android ${android.os.Build.VERSION.RELEASE} · ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
             appendLine()
-            for (e in _entries.value) {
+            for (e in _entries.value.filter { includeWire || !isWireDetail(it) }) {
                 append(fmt.format(Date(e.time))).append(' ').append('[').append(e.tag).append("] ").appendLine(e.message)
                 e.error?.let { appendLine("    $it") }
             }

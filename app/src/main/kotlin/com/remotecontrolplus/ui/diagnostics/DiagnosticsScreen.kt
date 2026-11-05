@@ -12,6 +12,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -21,6 +22,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -35,7 +39,9 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DiagnosticsScreen(onBack: () -> Unit) {
-    val entries by Diagnostics.entries.collectAsStateWithLifecycle()
+    val all by Diagnostics.entries.collectAsStateWithLifecycle()
+    var wire by rememberSaveable { mutableStateOf(false) }
+    val entries = if (wire) all else all.filterNot(Diagnostics::isWireDetail)
     val context = LocalContext.current
     val listState = rememberLazyListState()
     val fmt = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
@@ -52,6 +58,11 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                 },
                 actions = {
+                    FilterChip(
+                        selected = wire,
+                        onClick = { wire = !wire },
+                        label = { Text("Wire detail") },
+                    )
                     IconButton(onClick = { Diagnostics.clear() }) {
                         Icon(Icons.Filled.DeleteSweep, contentDescription = "Clear log")
                     }
@@ -59,7 +70,7 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                         val send = Intent(Intent.ACTION_SEND).apply {
                             type = "text/plain"
                             putExtra(Intent.EXTRA_SUBJECT, "Remote Control Plus diagnostics")
-                            putExtra(Intent.EXTRA_TEXT, Diagnostics.export())
+                            putExtra(Intent.EXTRA_TEXT, Diagnostics.export(includeWire = wire))
                         }
                         context.startActivity(Intent.createChooser(send, "Share diagnostics"))
                     }) {
