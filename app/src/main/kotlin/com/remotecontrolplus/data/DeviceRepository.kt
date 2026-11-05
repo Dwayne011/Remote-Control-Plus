@@ -44,6 +44,12 @@ class DeviceRepository(
         }
     }
 
+    suspend fun rename(deviceId: String, name: String) {
+        store.edit { prefs ->
+            prefs[devicesKey] = encode(decode(prefs[devicesKey]).map { if (it.id == deviceId) it.copy(name = name) else it })
+        }
+    }
+
     suspend fun forget(deviceId: String) {
         credentials.remove(deviceId)
         store.edit { prefs ->

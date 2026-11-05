@@ -35,6 +35,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.remotecontrolplus.core.RemoteKey
 import kotlin.math.abs
+import kotlinx.coroutines.launch
 
 @Composable
 fun PadModeToggle(mode: String, onChange: (String) -> Unit, modifier: Modifier = Modifier) {
@@ -65,6 +66,8 @@ fun TouchPad(
     onSwipe: (RemoteKey) -> Unit,
     /** Tap on the swipe surface; defaults to [onKey]. */
     onTap: (RemoteKey) -> Unit = onKey,
+    /** Repeats while an arrow is held; defaults to [onKey]. */
+    onRepeat: (RemoteKey) -> Unit = onKey,
     modifier: Modifier = Modifier,
     showHint: Boolean = false,
 ) {
@@ -110,16 +113,16 @@ fun TouchPad(
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh),
             contentAlignment = Alignment.Center,
         ) {
-            IconButton(onClick = { onKey(RemoteKey.UP) }, enabled = enabled, modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp).size(64.dp)) {
+            RepeatArrow(RemoteKey.UP, enabled, onKey, onRepeat, Modifier.align(Alignment.TopCenter).padding(top = 12.dp).size(64.dp)) {
                 Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Up", tint = chevronTint, modifier = Modifier.size(32.dp))
             }
-            IconButton(onClick = { onKey(RemoteKey.DOWN) }, enabled = enabled, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp).size(64.dp)) {
+            RepeatArrow(RemoteKey.DOWN, enabled, onKey, onRepeat, Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp).size(64.dp)) {
                 Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Down", tint = chevronTint, modifier = Modifier.size(32.dp))
             }
-            IconButton(onClick = { onKey(RemoteKey.LEFT) }, enabled = enabled, modifier = Modifier.align(Alignment.CenterStart).padding(start = 12.dp).size(64.dp)) {
+            RepeatArrow(RemoteKey.LEFT, enabled, onKey, onRepeat, Modifier.align(Alignment.CenterStart).padding(start = 12.dp).size(64.dp)) {
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Left", tint = chevronTint, modifier = Modifier.size(32.dp))
             }
-            IconButton(onClick = { onKey(RemoteKey.RIGHT) }, enabled = enabled, modifier = Modifier.align(Alignment.CenterEnd).padding(end = 12.dp).size(64.dp)) {
+            RepeatArrow(RemoteKey.RIGHT, enabled, onKey, onRepeat, Modifier.align(Alignment.CenterEnd).padding(end = 12.dp).size(64.dp)) {
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Right", tint = chevronTint, modifier = Modifier.size(32.dp))
             }
             Box(
@@ -167,4 +170,41 @@ private fun HintLine(icon: androidx.compose.ui.graphics.vector.ImageVector, text
         androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp))
         Text(text, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.outline)
     }
+}
+
+/**
+ * A D-pad arrow that repeats while held, like a physical remote: one press
+ * immediately, then after 400 ms a repeat every 110 ms until release.
+ */
+@Composable
+private fun RepeatArrow(
+    key: RemoteKey,
+    enabled: Boolean,
+    onKey: (RemoteKey) -> Unit,
+    onRepeat: (RemoteKey) -> Unit,
+    modifier: Modifier,
+    content: @Composable () -> Unit,
+) {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    Box(
+        modifier = modifier
+            .clip(CircleShape)
+            .pointerInput(enabled, key) {
+                if (!enabled) return@pointerInput
+                detectTapGestures(onPress = {
+                    onKey(key)
+                    val repeater = scope.launch {
+                        kotlinx.coroutines.delay(400)
+                        while (true) {
+                            com.remotecontrolplus.core.Haptics.tick()
+                            onRepeat(key)
+                            kotlinx.coroutines.delay(110)
+                        }
+                    }
+                    tryAwaitRelease()
+                    repeater.cancel()
+                })
+            },
+        contentAlignment = Alignment.Center,
+    ) { content() }
 }

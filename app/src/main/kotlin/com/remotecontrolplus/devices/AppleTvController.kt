@@ -41,7 +41,8 @@ class AppleTvController(
 
     override val capabilities = Capabilities(
         // Apple TV has no mute key; volume routes over HDMI-CEC when the TV supports it.
-        keys = Capabilities.ALL_KEYS - RemoteKey.MUTE,
+        // No mute key over Companion; mute is emulated through the volume level.
+        keys = Capabilities.ALL_KEYS,
         textEntry = true,
         volumeSlider = true,
     )
@@ -153,7 +154,7 @@ class AppleTvController(
             RemoteKey.POWER_OFF -> { r.sleep(); _powerState.value = false }
             RemoteKey.VOLUME_UP -> { r.volumeUp(); refreshVolume() }
             RemoteKey.VOLUME_DOWN -> { r.volumeDown(); refreshVolume() }
-            RemoteKey.MUTE -> Unit
+            RemoteKey.MUTE -> toggleMute(r)
             RemoteKey.UP -> r.up()
             RemoteKey.DOWN -> r.down()
             RemoteKey.LEFT -> r.left()
@@ -169,6 +170,28 @@ class AppleTvController(
         }
     }
 
+
+    /** Volume before muting, restored on unmute. */
+    private var mutedFrom: Double? = null
+
+    /**
+     * Apple TV has no mute command; set the volume to zero and restore it.
+     * Only possible when the Apple TV routes volume (HDMI-CEC or eARC).
+     */
+    private suspend fun toggleMute(r: AppleTvRemote) {
+        val restore = mutedFrom
+        if (restore != null) {
+            r.setVolume(restore)
+            mutedFrom = null
+            Diagnostics.log("appletv", "unmuted to $restore")
+            return
+        }
+        val current = runCatching { r.getVolume() }.getOrNull()
+            ?: throw IllegalStateException("This Apple TV is not controlling the TV's volume, so it cannot mute")
+        r.setVolume(0.0)
+        mutedFrom = if (current > 0.0) current else 0.3
+        Diagnostics.log("appletv", "muted from $current")
+    }
     /** A swipe on the pad becomes a swipe on the Siri Remote's virtual trackpad. */
     override suspend fun swipe(direction: RemoteKey) {
         val r = remote ?: throw NotConnectedException()

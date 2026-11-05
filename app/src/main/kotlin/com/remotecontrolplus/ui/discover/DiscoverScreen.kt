@@ -96,7 +96,7 @@ fun DiscoverScreen(
                     ListItem(
                         headlineContent = { Text(device.name) },
                         supportingContent = {
-                            Text(listOfNotNull(device.type.label, device.model, device.host).joinToString(" · "))
+                            Text(device.type.label)
                         },
                         leadingContent = { Icon(device.type.icon(), contentDescription = null) },
                         trailingContent = {

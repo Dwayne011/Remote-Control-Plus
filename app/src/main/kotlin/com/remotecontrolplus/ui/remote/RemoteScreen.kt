@@ -1,5 +1,8 @@
 package com.remotecontrolplus.ui.remote
 
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,7 +24,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Mic
@@ -120,7 +122,12 @@ fun RemoteScreen(
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(device.name, style = MaterialTheme.typography.titleLarge, maxLines = 1)
-                                Icon(Icons.Filled.ArrowDropDown, contentDescription = "Switch TV")
+                                Icon(
+                                    Icons.Filled.KeyboardArrowDown,
+                                    contentDescription = "Switch TV",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 4.dp).size(20.dp),
+                                )
                             }
                             StatusLine(state = connection, deviceLabel = device.type.label, powerState = powerState, waking = waking)
                         }
@@ -189,6 +196,7 @@ fun RemoteScreen(
                             enabled = connected,
                             onKey = viewModel::press,
                             onSwipe = viewModel::swipe,
+                            onRepeat = { viewModel.press(it, haptic = false) },
                             modifier = Modifier
                                 .fillMaxHeight()
                                 .aspectRatio(1f, matchHeightConstraintsFirst = true),
@@ -270,6 +278,7 @@ fun RemoteScreen(
             devices = devices,
             selectedId = selected?.id,
             onSelect = { viewModel.selectDevice(it); switcherOpen = false },
+            onRename = { id, name -> viewModel.renameDevice(id, name) },
             onForget = { viewModel.forgetDevice(it) },
             onAdd = { switcherOpen = false; onAddDevice() },
             onDismiss = { switcherOpen = false },
@@ -377,35 +386,42 @@ private fun PowerRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(56.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+            .height(56.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        if (showOn) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxSize()
-                    .clickable(enabled = onEnabled) { onKey(RemoteKey.POWER_ON) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("On", color = if (onEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline)
-            }
-        }
-        if (showOn && showOff) {
-            Box(Modifier.width(1.dp).fillMaxSize().background(MaterialTheme.colorScheme.outlineVariant))
-        }
-        if (showOff) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxSize()
-                    .clickable(enabled = offEnabled) { onKey(RemoteKey.POWER_OFF) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(offLabel, color = if (offEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline)
-            }
-        }
+        if (showOn) PowerSegment("On", onEnabled, Modifier.weight(1f)) { onKey(RemoteKey.POWER_ON) }
+        if (showOff) PowerSegment(offLabel, offEnabled, Modifier.weight(1f)) { onKey(RemoteKey.POWER_OFF) }
+    }
+}
+
+/**
+ * One power action. Available: filled, coloured, with the power icon.
+ * Unavailable (the TV is already in that state): flat, faded outline.
+ */
+@Composable
+private fun PowerSegment(label: String, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(20.dp)
+    val container = if (enabled) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+    val content = if (enabled) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    }
+    Row(
+        modifier = modifier
+            .fillMaxHeight()
+            .clip(shape)
+            .background(container)
+            .then(
+                if (enabled) Modifier else Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape),
+            )
+            .clickable(enabled = enabled, onClick = onClick),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Filled.PowerSettingsNew, contentDescription = null, tint = content, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(label, color = content, style = MaterialTheme.typography.titleMedium)
     }
 }
 
@@ -475,7 +491,7 @@ private fun VolumeRow(
                         .fillMaxSize()
                         .clickable(enabled = enabled && RemoteKey.VOLUME_UP in keys) { onKey(RemoteKey.VOLUME_UP) },
                     contentAlignment = Alignment.Center,
-                ) { Icon(Icons.Filled.VolumeUp, contentDescription = "Volume up") }
+                ) { Icon(Icons.Filled.Add, contentDescription = "Volume up") }
             }
         }
     }

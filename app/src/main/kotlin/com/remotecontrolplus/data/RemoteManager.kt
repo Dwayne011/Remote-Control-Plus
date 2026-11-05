@@ -124,6 +124,10 @@ class RemoteManager(
         repository.select(id)
     }
 
+    fun renameDevice(id: String, name: String) = scope.launch {
+        if (name.isNotBlank()) repository.rename(id, name)
+    }
+
     fun forgetDevice(id: String) = scope.launch {
         if (selected.value?.id == id) {
             _controller.value?.disconnect()

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -51,11 +52,12 @@ import com.remotecontrolplus.core.Haptics
 import com.remotecontrolplus.core.RemoteKey
 import com.remotecontrolplus.data.RemoteManager
 import com.remotecontrolplus.ui.components.AssistantButton
+import com.remotecontrolplus.ui.components.PadModeToggle
 import com.remotecontrolplus.ui.components.TouchPad
 import com.remotecontrolplus.ui.components.icon
 import com.remotecontrolplus.ui.components.skin
 
-private val PAD_HEIGHT = 236.dp
+private val PAD_HEIGHT = 216.dp
 
 /**
  * The pop-up remote card, after Google Home's: close, device chip with a
@@ -157,6 +159,9 @@ fun MiniRemote(remote: RemoteManager, onOpenFull: () -> Unit, onDismiss: () -> U
                 ) { press(if (onTv) RemoteKey.POWER_OFF else RemoteKey.POWER_ON) }
             }
 
+            if (hasNavigation) {
+                PadModeToggle(mode = padMode, onChange = { remote.setPadMode(it) }, modifier = Modifier.fillMaxWidth())
+            }
             // Pad: a wide rounded surface in swipe mode, a circle in D-pad mode.
             if (hasNavigation) {
                 TouchPad(
@@ -164,6 +169,7 @@ fun MiniRemote(remote: RemoteManager, onOpenFull: () -> Unit, onDismiss: () -> U
                     enabled = connected,
                     onKey = press,
                     onSwipe = { remote.swipe(it) },
+                    onRepeat = { remote.press(it, haptic = false) },
                     modifier = if (padMode == "dpad") {
                         Modifier.size(PAD_HEIGHT)
                     } else {
@@ -212,7 +218,7 @@ fun MiniRemote(remote: RemoteManager, onOpenFull: () -> Unit, onDismiss: () -> U
                 WideButton(Icons.Filled.Remove, "Volume down", connected && RemoteKey.VOLUME_DOWN in caps.keys, Modifier.weight(1f).height(56.dp)) {
                     press(RemoteKey.VOLUME_DOWN)
                 }
-                WideButton(Icons.Filled.VolumeUp, "Volume up", connected && RemoteKey.VOLUME_UP in caps.keys, Modifier.weight(1f).height(56.dp)) {
+                WideButton(Icons.Filled.Add, "Volume up", connected && RemoteKey.VOLUME_UP in caps.keys, Modifier.weight(1f).height(56.dp)) {
                     press(RemoteKey.VOLUME_UP)
                 }
             }

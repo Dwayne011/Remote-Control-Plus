@@ -63,6 +63,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setVolume(fraction: Float) = remote.setVolume(fraction)
     fun selectDevice(id: String) = remote.selectDevice(id)
     fun forgetDevice(id: String) = remote.forgetDevice(id)
+    fun renameDevice(id: String, name: String) = remote.renameDevice(id, name)
     fun reconnect() = remote.reconnect()
     fun press(key: RemoteKey, haptic: Boolean = true) = remote.press(key, haptic)
     fun sendText(text: String) = remote.sendText(text)
