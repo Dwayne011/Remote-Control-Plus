@@ -44,6 +44,55 @@ object MrpVoice {
         ),
     )
 
+
+    // --- Siri key over MRP (pyatv messages.py: send_hid_event / send_button) ---
+
+    const val TYPE_SEND_HID_EVENT = 8
+    const val EXT_SEND_HID_EVENT = 13
+    const val TYPE_SEND_BUTTON_EVENT = 39
+    const val EXT_SEND_BUTTON_EVENT = 43
+    const val TYPE_GENERIC = 42
+
+    /** Consumer page, usage 0x04 (microphone): pyatv's commented-out "mic" key. */
+    const val SIRI_USAGE_PAGE = 12
+    const val SIRI_USAGE = 0x04
+
+    private fun hex(s: String) = ByteArray(s.length / 2) { s.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
+
+    private fun uid() = java.util.UUID.randomUUID().toString().uppercase()
+
+    /** IOHID keyboard event blob in the layout pyatv documents in SendHIDEventMessage.proto. */
+    fun hidEvent(usagePage: Int, usage: Int, down: Boolean): ByteArray {
+        val data = byteArrayOf(
+            (usagePage shr 8).toByte(), usagePage.toByte(),
+            (usage shr 8).toByte(), usage.toByte(),
+            0, if (down) 1 else 0,
+        )
+        val blob = hex("438922cf08020000") +
+            hex("0000000000000000010000000000000002000000200000000300000001000000000000") +
+            data +
+            hex("0000000000000001000000")
+        return Protobuf.Builder()
+            .varint(Mrp.FIELD_TYPE, TYPE_SEND_HID_EVENT.toLong())
+            .message(EXT_SEND_HID_EVENT, Protobuf.Builder().bytes(1, blob))
+            .string(Mrp.FIELD_UNIQUE_IDENTIFIER, uid())
+            .build()
+    }
+
+    fun buttonEvent(usagePage: Int, usage: Int, down: Boolean): ByteArray = Protobuf.Builder()
+        .varint(Mrp.FIELD_TYPE, TYPE_SEND_BUTTON_EVENT.toLong())
+        .message(
+            EXT_SEND_BUTTON_EVENT,
+            Protobuf.Builder().varint(1, usagePage.toLong()).varint(2, usage.toLong()).bool(3, down),
+        )
+        .string(Mrp.FIELD_UNIQUE_IDENTIFIER, uid())
+        .build()
+
+    /** pyatv sends one of these after a key press as a flush. */
+    fun generic(): ByteArray = Protobuf.Builder()
+        .varint(Mrp.FIELD_TYPE, TYPE_GENERIC.toLong())
+        .string(Mrp.FIELD_UNIQUE_IDENTIFIER, uid())
+        .build()
     fun registerVoiceInputDevice(): ByteArray {
         // VoiceInputDeviceDescriptor { defaultFormat = 1; repeated supportedFormats = 2 }
         val descriptor = Protobuf.Builder()

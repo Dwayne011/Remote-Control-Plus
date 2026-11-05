@@ -27,6 +27,7 @@ import dev.atvremote.protocol.hap.Credentials
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -246,29 +247,64 @@ class AppleTvController(
     private var sampleTime = 0L
     private var packetsSent = 0
 
+    private val sessionLock = kotlinx.coroutines.sync.Mutex()
+
+    /**
+     * How Siri is triggered. The first experiment (Companion HID Siri) was
+     * acknowledged but Siri never appeared, so each hold now tries the next
+     * method and the log says which one was used.
+     */
+    private enum class SiriTrigger(val label: String) {
+        MRP_HID("MRP HID event, consumer page 12 usage 0x04"),
+        MRP_BUTTON("MRP button event, consumer page 12 usage 0x04"),
+        ALL("MRP HID + MRP button + Companion Siri together"),
+    }
+
+    private var holdCount = 0
+    private var trigger = SiriTrigger.MRP_HID
+
+    private suspend fun ensureSession(creds: Credentials): Ap2Session = sessionLock.withLock {
+        ap2?.takeIf { it.isConnected }?.let { return@withLock it }
+        Diagnostics.log("siri-voice", "opening AirPlay session to ${device.host}:7000")
+        val session = Ap2Session(device.host, creds, scope, "Remote Control Plus")
+        session.onDisconnect = {
+            Diagnostics.log("siri-voice", "AirPlay session closed: ${it?.message}")
+            ap2 = null
+            voiceDeviceId = null
+        }
+        session.connect()
+        ap2 = session
+        Diagnostics.log("siri-voice", "AirPlay session up; MRP tunnel ready")
+        session
+    }
+
+    private fun sendSiriKey(session: Ap2Session, down: Boolean) {
+        val page = MrpVoice.SIRI_USAGE_PAGE
+        val usage = MrpVoice.SIRI_USAGE
+        if (trigger == SiriTrigger.MRP_HID || trigger == SiriTrigger.ALL) session.sendMrp(MrpVoice.hidEvent(page, usage, down))
+        if (trigger == SiriTrigger.MRP_BUTTON || trigger == SiriTrigger.ALL) session.sendMrp(MrpVoice.buttonEvent(page, usage, down))
+        session.sendMrp(MrpVoice.generic())
+    }
+
     override suspend fun beginVoice(): Int {
         val r = remote ?: throw NotConnectedException()
         val creds = airplayCredentials?.let { runCatching { Credentials.parse(it) }.getOrNull() }
             ?: throw VoicePairingRequired()
-        var session = ap2
-        if (session == null || !session.isConnected) {
-            Diagnostics.log("siri-voice", "opening AirPlay session to ${device.host}:7000")
-            session = Ap2Session(device.host, creds, scope, "Remote Control Plus")
-            session.onDisconnect = { Diagnostics.log("siri-voice", "AirPlay session closed: ${it?.message}"); ap2 = null; voiceDeviceId = null }
-            session.connect()
-            ap2 = session
-            Diagnostics.log("siri-voice", "AirPlay session up; MRP tunnel ready")
-        }
+        val session = ensureSession(creds)
         val id = voiceDeviceId ?: session.registerVoiceInput().also {
             voiceDeviceId = it
             Diagnostics.log("siri-voice", "registered as voice input device $it")
         }
+        trigger = SiriTrigger.entries[holdCount % SiriTrigger.entries.size]
+        holdCount++
+        Diagnostics.log("siri-voice", "hold #$holdCount: trigger = ${trigger.label}")
         encoder = OpusEncoder(MrpVoice.SAMPLE_RATE)
         sampleTime = 0L
         packetsSent = 0
-        r.buttonDown(Button.SIRI)
-        Diagnostics.log("siri-voice", "Siri held; recording state -> Recording")
+        sendSiriKey(session, down = true)
+        if (trigger == SiriTrigger.ALL) r.buttonDown(Button.SIRI)
         session.setRecording(true)
+        Diagnostics.log("siri-voice", "Siri key down; recording state -> Recording")
         return id
     }
 
@@ -284,12 +320,15 @@ class AppleTvController(
     }
 
     override suspend fun endVoice(session: Int) {
-        runCatching { ap2?.setRecording(false) }
-        runCatching { remote?.buttonUp(Button.SIRI) }
+        val s = ap2
+        runCatching { s?.setRecording(false) }
+        runCatching { if (s != null) sendSiriKey(s, down = false) }
+        if (trigger == SiriTrigger.ALL) runCatching { remote?.buttonUp(Button.SIRI) }
         encoder?.release()
         encoder = null
-        Diagnostics.log("siri-voice", "recording state -> NotRecording; Siri released after $packetsSent packets")
+        Diagnostics.log("siri-voice", "hold #$holdCount (${trigger.name}): recording -> NotRecording, Siri key up after $packetsSent packets")
     }
+
 
     override suspend fun beginVoicePairing(): PairingHandle {
         val connection = AirPlayConnection(device.host, 7000)

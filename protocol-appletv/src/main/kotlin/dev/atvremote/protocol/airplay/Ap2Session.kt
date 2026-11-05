@@ -180,7 +180,8 @@ class Ap2Session(
                 }
                 else -> "fields=${message.fields.keys.sorted()}"
             }
-            "MRP type=$type $detail"
+            val err = message.varint(3)?.takeIf { it != 0L }?.let { " errorCode=$it" } ?: ""
+            "MRP type=$type$err $detail"
         }
         when (type) {
             Mrp.TYPE_SET_STATE -> applySetState(message.message(Mrp.EXT_SET_STATE))
@@ -342,6 +343,11 @@ class Ap2Session(
                 else dev.atvremote.protocol.mrp.MrpVoice.NOT_RECORDING,
             ),
         )
+    }
+
+    /** Send any MRP message over the tunnel. */
+    fun sendMrp(message: ByteArray) {
+        (dataChannel ?: error("AirPlay session not connected")).sendProtobuf(message)
     }
 
     fun sendVoicePacket(packet: ByteArray, sampleTime: Long) {
