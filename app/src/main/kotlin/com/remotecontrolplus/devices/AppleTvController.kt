@@ -265,13 +265,23 @@ class AppleTvController(
      * voice device is re-registered when the format changes.
      */
     private var holdCount = 0
-    private var format = MrpVoice.Format.LPCM
+    private var format = MrpVoice.Format.OPUS
+
+    /** Packing experiments, one per hold (Opus, as Apple's capture registers). */
+    private enum class Variant(val label: String, val packing: MrpVoice.Packing, val batch: Int) {
+        FIXED("fixed-length packets, 1 per message", MrpVoice.Packing(variableFrames = 0), 1),
+        BATCH5("fixed-length packets, 5 per message", MrpVoice.Packing(variableFrames = 0), 5),
+        CLOCK("fixed-length, clock-time timestamps", MrpVoice.Packing(variableFrames = 0, clockTimestamp = true), 1),
+        NO_FORMAT("fixed-length, no format inside each message", MrpVoice.Packing(variableFrames = 0, formatInBuffer = false), 1),
+    }
+    private var variant = Variant.FIXED
     private var registeredFormat: MrpVoice.Format? = null
 
     /** True once the TV has said Recording during this hold. */
     @Volatile private var tvRecording = false
     @Volatile private var tvSaidStop = false
     private val pending = java.util.ArrayDeque<ByteArray>()
+    private var unsentTail: List<ByteArray> = emptyList()
 
     private suspend fun ensureSession(creds: Credentials): Ap2Session = sessionLock.withLock {
         ap2?.takeIf { it.isConnected }?.let { return@withLock it }
@@ -306,7 +316,8 @@ class AppleTvController(
         val creds = airplayCredentials?.let { runCatching { Credentials.parse(it) }.getOrNull() }
             ?: throw VoicePairingRequired()
         val session = ensureSession(creds)
-        format = MrpVoice.Format.entries[holdCount % MrpVoice.Format.entries.size]
+        variant = Variant.entries[holdCount % Variant.entries.size]
+        format = MrpVoice.Format.OPUS
         holdCount++
         if (registeredFormat != format || voiceDeviceId == null) {
             voiceDeviceId = session.registerVoiceInput(format)
@@ -316,10 +327,11 @@ class AppleTvController(
         tvRecording = false
         tvSaidStop = false
         synchronized(pending) { pending.clear() }
+        unsentTail = emptyList()
         encoder = if (format == MrpVoice.Format.OPUS) OpusEncoder(MrpVoice.SAMPLE_RATE) else null
         sampleTime = 0L
         packetsSent = 0
-        Diagnostics.log("siri-voice", "hold #$holdCount: $format audio; Siri key down over MRP, waiting for the TV")
+        Diagnostics.log("siri-voice", "hold #$holdCount: ${variant.label}; Siri key down over MRP, waiting for the TV")
         sendSiriKey(session, down = true)
         return voiceDeviceId ?: 0
     }
@@ -341,12 +353,20 @@ class AppleTvController(
         }
         val backlog = synchronized(pending) { pending.toList().also { pending.clear() } }
         if (backlog.isNotEmpty()) Diagnostics.log("siri-voice", "TV is recording; flushing ${backlog.size} buffered blocks")
-        for (block in backlog + blocks) {
-            s.sendVoicePacket(block, sampleTime, format)
-            sampleTime += MrpVoice.FRAME_SAMPLES
-            packetsSent++
-            if (packetsSent == 1) Diagnostics.log("siri-voice", "first $format block sent (${block.size} bytes)")
+        val queue = backlog + blocks
+        synchronized(pending) {
+            // Keep a partial batch for next time so every message has `batch` packets.
+            pending.clear()
         }
+        val ready = (unsentTail + queue)
+        val full = ready.size - ready.size % variant.batch
+        for (chunk in ready.subList(0, full).chunked(variant.batch)) {
+            s.sendVoicePackets(chunk, sampleTime, format, variant.packing)
+            sampleTime += MrpVoice.FRAME_SAMPLES.toLong() * chunk.size
+            packetsSent += chunk.size
+            if (packetsSent == chunk.size) Diagnostics.log("siri-voice", "first message sent: ${chunk.size} packet(s), ${chunk.sumOf { it.size }} bytes")
+        }
+        unsentTail = ready.subList(full, ready.size).toList()
     }
 
     override suspend fun endVoice(session: Int) {
@@ -357,7 +377,7 @@ class AppleTvController(
         val buffered = synchronized(pending) { pending.size.also { pending.clear() } }
         Diagnostics.log(
             "siri-voice",
-            "hold #$holdCount ($format): Siri key up; sent $packetsSent blocks, $buffered never requested; TV said recording=$tvRecording stop=$tvSaidStop",
+            "hold #$holdCount (${variant.name}): Siri key up; sent $packetsSent packets, $buffered never requested; TV said recording=$tvRecording stop=$tvSaidStop",
         )
     }
 

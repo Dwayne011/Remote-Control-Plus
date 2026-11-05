@@ -363,13 +363,14 @@ class Ap2Session(
         (dataChannel ?: error("AirPlay session not connected")).sendProtobuf(message)
     }
 
-    fun sendVoicePacket(
-        packet: ByteArray,
+    fun sendVoicePackets(
+        packets: List<ByteArray>,
         sampleTime: Long,
-        format: dev.atvremote.protocol.mrp.MrpVoice.Format = dev.atvremote.protocol.mrp.MrpVoice.Format.OPUS,
+        format: dev.atvremote.protocol.mrp.MrpVoice.Format,
+        packing: dev.atvremote.protocol.mrp.MrpVoice.Packing,
     ) {
         val channel = dataChannel ?: error("AirPlay session not connected")
-        channel.sendProtobuf(dev.atvremote.protocol.mrp.MrpVoice.sendVoiceInput(format, packet, sampleTime))
+        channel.sendProtobuf(dev.atvremote.protocol.mrp.MrpVoice.sendVoiceInput(format, packets, sampleTime, packing))
     }
 
     val isConnected: Boolean get() = dataChannel != null && connection != null

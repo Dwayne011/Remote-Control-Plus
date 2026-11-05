@@ -122,38 +122,59 @@ object MrpVoice {
         .string(Mrp.FIELD_UNIQUE_IDENTIFIER, uid())
         .build()
 
+    /** Experimental knobs for how audio is packed; see AppleTvController. */
+    data class Packing(
+        /** Packet description's variableFramesInPacket: 320, or 0 for "constant". */
+        val variableFrames: Int = 0,
+        /** Include formatSettings inside every AudioBuffer. */
+        val formatInBuffer: Boolean = true,
+        /** Use clock seconds for AudioTime.timestamp instead of a sample count. */
+        val clockTimestamp: Boolean = false,
+    )
+
     /**
-     * One 20 ms block as SendVoiceInputMessage { dataBlock = 1 }:
-     * AudioDataBlock { buffer = 1; time = 2; gain = 3 }.
-     * Opus: one packet with a packet description. LPCM: 320 one-frame
-     * packets of 2 bytes, no descriptions (constant-size format).
+     * Opus packets as SendVoiceInputMessage { dataBlock = 1 }:
+     * AudioDataBlock { buffer = 1; time = 2; gain = 3 }, with one packet
+     * description per packet. LPCM: one-frame packets, no descriptions.
      */
-    fun sendVoiceInput(format: Format, contents: ByteArray, sampleTime: Long): ByteArray {
-        val buffer = Protobuf.Builder().message(1, formatSettings(format))
+    fun sendVoiceInput(
+        format: Format,
+        packets: List<ByteArray>,
+        sampleTime: Long,
+        packing: Packing = Packing(),
+    ): ByteArray {
+        val buffer = Protobuf.Builder()
+        if (packing.formatInBuffer) buffer.message(1, formatSettings(format))
         if (format == Format.OPUS) {
-            val description = Protobuf.Builder()
-                .varint(1, 0)                          // startOffset
-                .varint(2, FRAME_SAMPLES.toLong())     // variableFramesInPacket
-                .varint(3, contents.size.toLong())     // dataByteSize
-            buffer.varint(2, 1)                        // packetCapacity
-                .varint(3, contents.size.toLong())     // maximumPacketSize
-                .varint(4, 1)                          // packetCount
-                .bytes(5, contents)                    // contents
-                .message(6, description)               // packetDescriptions
+            val contents = packets.fold(ByteArray(0)) { acc, p -> acc + p }
+            buffer.varint(2, packets.size.toLong())                       // packetCapacity
+                .varint(3, packets.maxOf { it.size }.toLong())             // maximumPacketSize
+                .varint(4, packets.size.toLong())                         // packetCount
+                .bytes(5, contents)                                       // contents
+            var offset = 0L
+            for (p in packets) {
+                buffer.message(
+                    6,
+                    Protobuf.Builder()
+                        .varint(1, offset)                                // startOffset
+                        .varint(2, packing.variableFrames.toLong())       // variableFramesInPacket
+                        .varint(3, p.size.toLong()),                      // dataByteSize
+                )
+                offset += p.size
+            }
         } else {
+            val contents = packets.fold(ByteArray(0)) { acc, p -> acc + p }
             val frames = (contents.size / 2).toLong()
-            buffer.varint(2, frames)                   // packetCapacity
-                .varint(3, 2)                          // maximumPacketSize
-                .varint(4, frames)                     // packetCount
-                .bytes(5, contents)                    // contents
+            buffer.varint(2, frames).varint(3, 2).varint(4, frames).bytes(5, contents)
         }
+        val timestamp = if (packing.clockTimestamp) System.nanoTime() / 1e9 else sampleTime.toDouble()
         val time = Protobuf.Builder()
-            .double(1, sampleTime.toDouble())          // timestamp, in samples
-            .double(2, SAMPLE_RATE.toDouble())         // sampleRate
+            .double(1, timestamp)
+            .double(2, SAMPLE_RATE.toDouble())
         val block = Protobuf.Builder()
             .message(1, buffer)
             .message(2, time)
-            .double(3, 1.0)                            // gain
+            .double(3, 1.0)
         return Protobuf.Builder()
             .varint(Mrp.FIELD_TYPE, TYPE_SEND_VOICE_INPUT.toLong())
             .message(EXT_SEND_VOICE_INPUT, Protobuf.Builder().message(1, block))
