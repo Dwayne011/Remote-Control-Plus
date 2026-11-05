@@ -100,6 +100,9 @@ fun RemoteScreen(
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(Unit) { viewModel.messages.collect { snackbar.showSnackbar(it) } }
 
+    var offerVoicePairing by remember { mutableStateOf<com.remotecontrolplus.core.TvDevice?>(null) }
+    LaunchedEffect(Unit) { viewModel.voicePairingNeeded.collect { offerVoicePairing = it } }
+
     var switcherOpen by rememberSaveable { mutableStateOf(false) }
     var keyboardOpen by rememberSaveable { mutableStateOf(false) }
 
@@ -293,6 +296,28 @@ fun RemoteScreen(
         )
     }
 
+
+    offerVoicePairing?.let { device ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { offerVoicePairing = null },
+            title = { Text("Set up Siri voice?") },
+            text = {
+                Text(
+                    "To hear you through your phone, ${device.name} needs one more pairing. " +
+                        "A 4-digit code will appear on the TV. This is experimental and may not work on every tvOS version.",
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    offerVoicePairing = null
+                    viewModel.startVoicePairing(device)
+                }) { Text("Pair") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { offerVoicePairing = null }) { Text("Not now") }
+            },
+        )
+    }
     val pd = pairingDevice
     if (pd != null && pairing != PairingUiState.Idle) {
         PairingDialog(

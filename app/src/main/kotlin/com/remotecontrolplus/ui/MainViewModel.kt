@@ -57,6 +57,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val waking: StateFlow<Boolean> get() = remote.waking
     val powerState: StateFlow<Boolean?> get() = remote.powerState
     val messages: SharedFlow<String> get() = remote.messages
+    val voicePairingNeeded: SharedFlow<TvDevice> get() = remote.voicePairingNeeded
 
     fun setPadMode(mode: String) = remote.setPadMode(mode)
     fun swipe(direction: RemoteKey) = remote.swipe(direction)
@@ -160,6 +161,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+
+    /** Second, voice-only pairing (Apple TV AirPlay). Uses the same dialog. */
+    fun startVoicePairing(device: TvDevice) = viewModelScope.launch {
+        Diagnostics.log("app", "start voice pairing with '${device.name}'")
+        cancelPairing(silent = true)
+        _pairingDevice.value = device
+        _pairing.value = PairingUiState.Starting
+        val c = controller.value as? com.remotecontrolplus.core.VoicePairable
+        if (c == null) {
+            _pairing.value = PairingUiState.Failed("This TV has no voice pairing")
+            return@launch
+        }
+        val handle = try {
+            withContext(Dispatchers.IO) { c.beginVoicePairing() }
+        } catch (e: Exception) {
+            _pairing.value = PairingUiState.Failed(e.message ?: "Could not start voice pairing")
+            return@launch
+        }
+        pairingHandle = handle
+        _pairing.value = PairingUiState.AwaitingPin(handle.instruction)
+    }
     fun submitPin(pin: String) = viewModelScope.launch {
         val current = _pairing.value as? PairingUiState.AwaitingPin ?: return@launch
         _pairing.value = current.copy(inProgress = true, error = null)
@@ -171,7 +193,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val handle = pairingHandle ?: return
         try {
             val credential = withContext(Dispatchers.IO) { handle.finish(pin) }
-            credentials.put(device.id, credential)
+            credentials.put(handle.storageKey ?: device.id, credential)
             _pairing.value = PairingUiState.Done
             pairingController?.disconnect()
             pairingController = null

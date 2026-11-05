@@ -12,6 +12,14 @@ import com.remotecontrolplus.core.TextFieldState
 import com.remotecontrolplus.core.TvController
 import com.remotecontrolplus.core.TvDevice
 import com.remotecontrolplus.core.HoldableAssistant
+import com.remotecontrolplus.core.OpusEncoder
+import com.remotecontrolplus.core.VoiceCapable
+import com.remotecontrolplus.core.VoicePairable
+import com.remotecontrolplus.core.VoicePairingRequired
+import dev.atvremote.protocol.airplay.AirPlayAuth
+import dev.atvremote.protocol.airplay.AirPlayConnection
+import dev.atvremote.protocol.airplay.Ap2Session
+import dev.atvremote.protocol.mrp.MrpVoice
 import dev.atvremote.protocol.companion.AppleTvRemote
 import dev.atvremote.protocol.companion.Button
 import dev.atvremote.protocol.companion.CompanionClient
@@ -33,11 +41,12 @@ import kotlinx.coroutines.flow.asStateFlow
 class AppleTvController(
     override val device: TvDevice,
     private val serializedCredentials: String?,
+    private val airplayCredentials: String? = null,
     private val scope: CoroutineScope,
     private val portResolver: suspend (TvDevice, Long) -> Int?,
     private val cachedPort: (TvDevice) -> Int?,
     private val rememberPort: (TvDevice, Int) -> Unit,
-) : TvController, Pairable, HoldableAssistant {
+) : TvController, Pairable, HoldableAssistant, VoiceCapable, VoicePairable {
 
     override val capabilities = Capabilities(
         // Apple TV has no mute key; volume routes over HDMI-CEC when the TV supports it.
@@ -141,6 +150,9 @@ class AppleTvController(
     }
 
     override fun disconnect() {
+        ap2?.close()
+        ap2 = null
+        voiceDeviceId = null
         _powerState.value = null
         remote?.close()
         remote = null
@@ -218,6 +230,103 @@ class AppleTvController(
     }
 
 
+
+    // ------------------------------------------------- Siri voice (experimental)
+    // Siri audio over the MRP channel tunnelled through AirPlay: register as a
+    // voice input device, hold Siri, mark recording, stream Opus packets. The
+    // messages come from pyatv's protobuf definitions; no public client is known
+    // to have used them on current tvOS, so every step is logged.
+
+    override val voiceSampleRate = MrpVoice.SAMPLE_RATE
+    override val voiceChunkBytes = MrpVoice.FRAME_SAMPLES * 2
+
+    private var ap2: Ap2Session? = null
+    private var voiceDeviceId: Int? = null
+    private var encoder: OpusEncoder? = null
+    private var sampleTime = 0L
+    private var packetsSent = 0
+
+    override suspend fun beginVoice(): Int {
+        val r = remote ?: throw NotConnectedException()
+        val creds = airplayCredentials?.let { runCatching { Credentials.parse(it) }.getOrNull() }
+            ?: throw VoicePairingRequired()
+        var session = ap2
+        if (session == null || !session.isConnected) {
+            Diagnostics.log("siri-voice", "opening AirPlay session to ${device.host}:7000")
+            session = Ap2Session(device.host, creds, scope, "Remote Control Plus")
+            session.onDisconnect = { Diagnostics.log("siri-voice", "AirPlay session closed: ${it?.message}"); ap2 = null; voiceDeviceId = null }
+            session.connect()
+            ap2 = session
+            Diagnostics.log("siri-voice", "AirPlay session up; MRP tunnel ready")
+        }
+        val id = voiceDeviceId ?: session.registerVoiceInput().also {
+            voiceDeviceId = it
+            Diagnostics.log("siri-voice", "registered as voice input device $it")
+        }
+        encoder = OpusEncoder(MrpVoice.SAMPLE_RATE)
+        sampleTime = 0L
+        packetsSent = 0
+        r.buttonDown(Button.SIRI)
+        Diagnostics.log("siri-voice", "Siri held; recording state -> Recording")
+        session.setRecording(true)
+        return id
+    }
+
+    override suspend fun sendVoice(session: Int, pcm: ByteArray) {
+        val s = ap2 ?: throw NotConnectedException()
+        val enc = encoder ?: return
+        for (packet in enc.encode(pcm)) {
+            s.sendVoicePacket(packet, sampleTime)
+            sampleTime += MrpVoice.FRAME_SAMPLES
+            packetsSent++
+            if (packetsSent == 1) Diagnostics.log("siri-voice", "first Opus packet sent (${packet.size} bytes)")
+        }
+    }
+
+    override suspend fun endVoice(session: Int) {
+        runCatching { ap2?.setRecording(false) }
+        runCatching { remote?.buttonUp(Button.SIRI) }
+        encoder?.release()
+        encoder = null
+        Diagnostics.log("siri-voice", "recording state -> NotRecording; Siri released after $packetsSent packets")
+    }
+
+    override suspend fun beginVoicePairing(): PairingHandle {
+        val connection = AirPlayConnection(device.host, 7000)
+        Diagnostics.log("siri-voice", "voice pairing: opening AirPlay on ${device.host}:7000")
+        connection.connect()
+        val pairing = try {
+            AirPlayAuth.startPairing(connection, "Remote Control Plus")
+        } catch (e: Exception) {
+            connection.close()
+            Diagnostics.log("siri-voice", "voice pairing could not start", e)
+            throw PairingException(e.message ?: "Could not start Siri voice pairing")
+        }
+        Diagnostics.log("siri-voice", "voice pairing: the Apple TV should now show a code")
+        return object : PairingHandle {
+            override val needsPin = true
+            override val instruction = "Enter the 4-digit code now shown on your Apple TV. This second pairing lets the app send your voice to Siri."
+            override val storageKey = airplayKey(device)
+
+            override suspend fun finish(pin: String?): String {
+                val code = pin?.trim() ?: throw PairingException("A code is required")
+                return try {
+                    pairing.complete(code).serialize().also { Diagnostics.log("siri-voice", "voice pairing complete") }
+                } catch (e: Exception) {
+                    Diagnostics.log("siri-voice", "voice pairing failed after code entry", e)
+                    throw PairingException(e.message ?: "The Apple TV rejected the code")
+                } finally {
+                    connection.close()
+                }
+            }
+
+            override fun cancel() = connection.close()
+        }
+    }
+
+    companion object {
+        fun airplayKey(device: TvDevice) = device.id + "#airplay"
+    }
     /** Siri is held like the Siri Remote: down on press, up on release. */
     override suspend fun assistantDown() {
         (remote ?: throw NotConnectedException()).buttonDown(Button.SIRI)

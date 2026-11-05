@@ -30,6 +30,6 @@ class RemoteControlPlusApp : Application() {
     val repository by lazy { DeviceRepository(this, credentials) }
     val nsd by lazy { NsdDiscovery(this) }
     val discovery by lazy { DeviceDiscovery(nsd, SsdpDiscovery(this), SubnetProbe(this)) }
-    val controllers by lazy { ControllerFactory(appScope, nsd) }
+    val controllers by lazy { ControllerFactory(appScope, nsd, credentials) }
     val remote by lazy { RemoteManager(appScope, repository, credentials, controllers) }
 }

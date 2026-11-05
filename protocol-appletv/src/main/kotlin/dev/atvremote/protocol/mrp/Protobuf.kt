@@ -147,6 +147,12 @@ object Protobuf {
 
         fun bool(number: Int, value: Boolean) = varint(number, if (value) 1L else 0L)
 
+        fun double(number: Int, value: Double) = apply {
+            out.write(writeVarint((number.toLong() shl 3) or 1))
+            val bits = java.lang.Double.doubleToRawLongBits(value)
+            for (i in 0 until 8) out.write(((bits ushr (8 * i)) and 0xFF).toInt())
+        }
+
         fun bytes(number: Int, value: ByteArray) = apply {
             out.write(writeVarint((number.toLong() shl 3) or 2))
             out.write(writeVarint(value.size.toLong()))

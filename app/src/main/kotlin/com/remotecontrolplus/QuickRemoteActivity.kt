@@ -5,6 +5,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -32,6 +34,11 @@ class QuickRemoteActivity : ComponentActivity() {
         val app = application as RemoteControlPlusApp
         Diagnostics.log("tile", "quick remote opened")
         app.remote.ensureConnected("quick remote")
+        lifecycleScope.launch {
+            app.remote.voicePairingNeeded.collect {
+                android.widget.Toast.makeText(this@QuickRemoteActivity, "Open the full remote to set up Siri voice", android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
 
         setContent {
             RemoteControlPlusTheme {

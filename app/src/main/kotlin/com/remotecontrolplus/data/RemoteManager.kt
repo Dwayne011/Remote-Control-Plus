@@ -232,11 +232,7 @@ class RemoteManager(
         assistantJob = scope.launch {
             when {
                 c is VoiceCapable && micAllowed -> streamVoice(c)
-                c is HoldableAssistant -> runCatching {
-                    withContext(Dispatchers.IO) { c.assistantDown() }
-                    _listening.value = true
-                    Diagnostics.log("app", "assistant held on ${c.device.name}")
-                }.onFailure { _messages.tryEmit(it.message ?: "Could not start Siri") }
+                c is HoldableAssistant -> holdAssistant(c)
                 else -> {
                     if (c is VoiceCapable) _messages.tryEmit("Allow microphone access to talk to the TV from your phone")
                     runCatching { withContext(Dispatchers.IO) { c.sendKey(RemoteKey.ASSISTANT) } }
@@ -246,6 +242,18 @@ class RemoteManager(
         }
     }
 
+    /** True while the assistant is held without phone audio (released on button up). */
+    @Volatile private var holdingAssistant = false
+
+    private suspend fun holdAssistant(c: HoldableAssistant) {
+        runCatching {
+            withContext(Dispatchers.IO) { c.assistantDown() }
+            holdingAssistant = true
+            _listening.value = true
+            Diagnostics.log("app", "assistant held")
+        }.onFailure { _messages.tryEmit(it.message ?: "Could not start the assistant") }
+    }
+
     fun assistantReleased() {
         val c = _controller.value
         val job = assistantJob
@@ -253,22 +261,32 @@ class RemoteManager(
         scope.launch {
             job?.cancel()
             job?.join()
-            if (c is HoldableAssistant && c !is VoiceCapable && _listening.value) {
+            if (holdingAssistant && c is HoldableAssistant) {
                 runCatching { withContext(Dispatchers.IO) { c.assistantUp() } }
-                Diagnostics.log("app", "assistant released on ${c.device.name}")
+                Diagnostics.log("app", "assistant released")
             }
+            holdingAssistant = false
             _listening.value = false
         }
     }
 
+    private val _voicePairingNeeded = MutableSharedFlow<TvDevice>(extraBufferCapacity = 1)
+    /** Emits when a device needs its separate voice pairing before voice can work. */
+    val voicePairingNeeded: SharedFlow<TvDevice> = _voicePairingNeeded.asSharedFlow()
 
     /** Whether holding the assistant button would use the phone microphone. */
     fun wantsMicrophone(): Boolean = _controller.value is VoiceCapable
+
     private suspend fun streamVoice(c: VoiceCapable) {
         val session = try {
             withContext(Dispatchers.IO) { c.beginVoice() }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
+        } catch (e: com.remotecontrolplus.core.VoicePairingRequired) {
+            // Ask for the voice pairing, and meanwhile behave like the old button.
+            (c as? TvController)?.device?.let { _voicePairingNeeded.tryEmit(it) }
+            if (c is HoldableAssistant) holdAssistant(c)
+            return
         } catch (e: Exception) {
             Diagnostics.log("voice", "could not open a voice session", e)
             _messages.tryEmit(e.message ?: "The TV did not accept voice")
@@ -291,6 +309,7 @@ class RemoteManager(
             _listening.value = false
         }
     }
+
     fun sendText(text: String) = scope.launch {
         val c = _controller.value ?: return@launch
         Diagnostics.log("app", "send ${text.length} chars of text to ${c.device.name}")

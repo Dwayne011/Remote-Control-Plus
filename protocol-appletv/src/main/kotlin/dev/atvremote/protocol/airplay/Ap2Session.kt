@@ -45,6 +45,9 @@ class Ap2Session(
     var onNowPlaying: ((NowPlaying) -> Unit)? = null
     var onDisconnect: ((Throwable?) -> Unit)? = null
 
+    /** Voice device id handed out by RegisterVoiceInputDeviceResponse (Remote Control Plus addition). */
+    @Volatile private var voiceRegistration: kotlinx.coroutines.CompletableDeferred<Pair<Int, Int>>? = null
+
     suspend fun connect() {
         val conn = AirPlayConnection(host, AIRPLAY_PORT)
         conn.connect()
@@ -181,6 +184,13 @@ class Ap2Session(
         }
         when (type) {
             Mrp.TYPE_SET_STATE -> applySetState(message.message(Mrp.EXT_SET_STATE))
+            dev.atvremote.protocol.mrp.MrpVoice.TYPE_REGISTER_VOICE_INPUT_DEVICE_RESPONSE -> {
+                val r = message.message(dev.atvremote.protocol.mrp.MrpVoice.EXT_REGISTER_VOICE_INPUT_DEVICE_RESPONSE)
+                val id = (r?.varint(1) ?: -1L).toInt()
+                val error = (r?.varint(2) ?: 0L).toInt()
+                Log.d { "voice device registered: id=$id error=$error" }
+                voiceRegistration?.complete(id to error)
+            }
             Mrp.TYPE_UPDATE_CONTENT_ITEM ->
                 applyContentItems(message.message(Mrp.EXT_UPDATE_CONTENT_ITEM))
             Mrp.TYPE_SET_NOW_PLAYING_CLIENT ->
@@ -308,6 +318,38 @@ class Ap2Session(
         onNowPlaying?.invoke(state)
     }
 
+
+    // ---------------------------------------------- voice (Remote Control Plus)
+
+    /** Register as a voice input device; returns the device id, or throws. */
+    suspend fun registerVoiceInput(timeoutMs: Long = 4000): Int {
+        val channel = dataChannel ?: error("AirPlay session not connected")
+        val deferred = kotlinx.coroutines.CompletableDeferred<Pair<Int, Int>>()
+        voiceRegistration = deferred
+        channel.sendProtobuf(dev.atvremote.protocol.mrp.MrpVoice.registerVoiceInputDevice())
+        val (id, error) = kotlinx.coroutines.withTimeoutOrNull(timeoutMs) { deferred.await() }
+            ?: error("Apple TV did not answer the voice registration")
+        voiceRegistration = null
+        if (error != 0) error("Apple TV refused the voice device (error $error)")
+        return id
+    }
+
+    fun setRecording(recording: Boolean) {
+        val channel = dataChannel ?: error("AirPlay session not connected")
+        channel.sendProtobuf(
+            dev.atvremote.protocol.mrp.MrpVoice.setRecordingState(
+                if (recording) dev.atvremote.protocol.mrp.MrpVoice.RECORDING
+                else dev.atvremote.protocol.mrp.MrpVoice.NOT_RECORDING,
+            ),
+        )
+    }
+
+    fun sendVoicePacket(packet: ByteArray, sampleTime: Long) {
+        val channel = dataChannel ?: error("AirPlay session not connected")
+        channel.sendProtobuf(dev.atvremote.protocol.mrp.MrpVoice.sendVoiceInput(packet, sampleTime))
+    }
+
+    val isConnected: Boolean get() = dataChannel != null && connection != null
     fun close() {
         feedbackJob?.cancel()
         dataChannel?.close()

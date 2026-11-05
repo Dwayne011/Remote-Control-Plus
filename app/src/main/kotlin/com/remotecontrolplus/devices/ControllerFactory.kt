@@ -10,6 +10,7 @@ import kotlinx.coroutines.CoroutineScope
 class ControllerFactory(
     private val scope: CoroutineScope,
     private val nsd: NsdDiscovery,
+    private val credentials: com.remotecontrolplus.data.CredentialStore,
 ) {
     fun create(device: TvDevice, credential: String?): TvController = when (device.type) {
         DeviceType.SAMSUNG -> SamsungController(device, credential)
@@ -18,6 +19,7 @@ class ControllerFactory(
         DeviceType.APPLE_TV -> AppleTvController(
             device = device,
             serializedCredentials = credential,
+            airplayCredentials = credentials.get(AppleTvController.airplayKey(device)),
             scope = scope,
             portResolver = { d, timeout -> nsd.resolveCompanionPort(d, timeout) },
             cachedPort = { d -> nsd.cachedCompanionPort(d) },

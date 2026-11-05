@@ -58,6 +58,9 @@ interface PairingHandle {
     /** What the user should be told while waiting, e.g. "Accept the prompt on your TV". */
     val instruction: String
 
+    /** Where to store the credential; null means under the device id. */
+    val storageKey: String? get() = null
+
     /**
      * Finish pairing. [pin] is required when [needsPin]. Returns the credential
      * blob to store for this device.
@@ -90,4 +93,12 @@ interface VoiceCapable {
 interface HoldableAssistant {
     suspend fun assistantDown()
     suspend fun assistantUp()
+}
+
+/** The device can take voice, but needs its own one-time pairing first. */
+class VoicePairingRequired : Exception("Siri voice needs a one-time pairing")
+
+/** Devices with a separate pairing for voice (Apple TV's AirPlay pairing). */
+interface VoicePairable {
+    suspend fun beginVoicePairing(): PairingHandle
 }
