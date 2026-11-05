@@ -248,7 +248,8 @@ class AppleTvController(
     // Over Companion Link, as the iPhone's Control Center remote does it
     // (captures in pyatv issues #2325 and #2875): Siri held via _hidC, then
     // _siriStart, then _siA events carrying Opus frames, then _siriStop. The
-    // captured frames are Opus SILK narrowband, 8 kHz mono, 20 ms (TOC 0x48).
+    // captured frames start with TOC 0x48: Opus config 9, SILK wideband
+    // (16 kHz), 20 ms, mono, one frame per packet (RFC 6716 table 2).
     // Publicly, replaying this opened Siri and moved the waveform, but no
     // speech was recognised, so every step is logged.
 
@@ -262,6 +263,7 @@ class AppleTvController(
     private var eventsSent = 0
     private var bytesSent = 0
     private var holdCount = 0
+    private val tocCounts = java.util.TreeMap<Int, Int>()
     @Volatile private var endpointRequested = false
 
     /** Log anything Siri-related the Apple TV says to us during a hold. */
@@ -277,6 +279,7 @@ class AppleTvController(
         endpointRequested = false
         synchronized(unsent) { unsent.clear() }
         framesSent = 0; eventsSent = 0; bytesSent = 0
+        synchronized(tocCounts) { tocCounts.clear() }
         encoder = OpusEncoder(VOICE_RATE, VOICE_BITRATE)
         r.buttonDown(Button.SIRI)
         Diagnostics.log("siri-voice", "hold #$holdCount: Siri button down (_hidC 10); sending _siriStart")
@@ -292,13 +295,8 @@ class AppleTvController(
         val r = remote ?: throw NotConnectedException()
         val packets = encoder?.encode(pcm) ?: return
         if (packets.isEmpty()) return
-        if (framesSent == 0 && synchronized(unsent) { unsent.isEmpty() }) {
-            val toc = packets[0][0].toInt() and 0xFF
-            Diagnostics.log(
-                "siri-voice",
-                "first Opus packet: ${packets[0].size} bytes, TOC 0x%02x (config %d, %s; capture expects 0x48 = config 9, SILK NB 20 ms mono)"
-                    .format(toc, toc shr 3, if (toc and 0x04 != 0) "stereo" else "mono"),
-            )
+        synchronized(tocCounts) {
+            for (p in packets) if (p.isNotEmpty()) tocCounts.merge(p[0].toInt() and 0xFF, 1, Int::plus)
         }
         val batch: List<ByteArray>? = synchronized(unsent) {
             unsent += packets
@@ -334,6 +332,8 @@ class AppleTvController(
             "siri-voice",
             "hold #$holdCount: released; $eventsSent _siA events, $framesSent frames, $bytesSent bytes; TV asked for endpoint=$endpointRequested",
         )
+        val tocs = synchronized(tocCounts) { tocCounts.entries.joinToString { (t, n) -> "0x%02x (%s) x%d".format(t, describeToc(t), n) } }
+        Diagnostics.log("siri-voice", "Opus frame types this hold: $tocs; the iPhone capture is all 0x48")
     }
 
     override suspend fun beginVoicePairing(): PairingHandle {
@@ -370,11 +370,27 @@ class AppleTvController(
     }
 
     companion object {
-        const val VOICE_RATE = 8_000
-        const val VOICE_FRAME_SAMPLES = 160
+        const val VOICE_RATE = 16_000
+        const val VOICE_FRAME_SAMPLES = 320
         const val VOICE_BITRATE = 16_000
         const val FRAMES_PER_EVENT = 5
         fun airplayKey(device: TvDevice) = device.id + "#airplay"
+
+        /** Opus TOC byte in words (RFC 6716 section 3.1, table 2). */
+        fun describeToc(toc: Int): String {
+            val config = toc shr 3
+            val mode = when (config) {
+                in 0..3 -> "SILK NB"; in 4..7 -> "SILK MB"; in 8..11 -> "SILK WB"
+                12, 13 -> "Hybrid SWB"; 14, 15 -> "Hybrid FB"
+                in 16..19 -> "CELT NB"; in 20..23 -> "CELT WB"; in 24..27 -> "CELT SWB"; else -> "CELT FB"
+            }
+            val ms = when {
+                config < 12 -> listOf("10", "20", "40", "60")[config % 4]
+                config < 16 -> listOf("10", "20")[config % 2]
+                else -> listOf("2.5", "5", "10", "20")[config % 4]
+            }
+            return "$mode $ms ms ${if (toc and 4 != 0) "stereo" else "mono"} code ${toc and 3}"
+        }
     }
     /** Siri is held like the Siri Remote: down on press, up on release. */
     override suspend fun assistantDown() {
