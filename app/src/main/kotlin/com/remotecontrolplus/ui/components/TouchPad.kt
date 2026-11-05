@@ -196,7 +196,6 @@ private fun RepeatArrow(
                     val repeater = scope.launch {
                         kotlinx.coroutines.delay(400)
                         while (true) {
-                            com.remotecontrolplus.core.Haptics.tick()
                             onRepeat(key)
                             kotlinx.coroutines.delay(110)
                         }
