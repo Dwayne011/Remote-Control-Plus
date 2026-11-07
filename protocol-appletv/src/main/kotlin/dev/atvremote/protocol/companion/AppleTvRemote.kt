@@ -110,6 +110,17 @@ class AppleTvRemote(
 
     val isConnected: Boolean get() = client.isConnected
 
+    /**
+     * Local change, experimental: the Apple TV's own `_siriInfo` from an
+     * earlier connection. When set, [sendSystemInfo] presents an iPhone-style
+     * `_siriInfo` built from the TV's home-level values, the way a device on
+     * the same account would. Nothing here is signed or verified locally.
+     */
+    var peerSiriInfo: Map<Any?, Any?>? = null
+
+    /** Receives the Apple TV's `_siriInfo` once `_systemInfo` is answered. */
+    var onPeerSiriInfo: ((Map<Any?, Any?>) -> Unit)? = null
+
     var onEvent: ((String, Map<Any?, Any?>) -> Unit)?
         get() = externalEventHandler
         set(v) { externalEventHandler = v }
@@ -202,10 +213,7 @@ class AppleTvRemote(
                 // from pyatv's golden test, tests/support/test_opack.py); without
                 // it the Apple TV may not treat this client as Siri-capable.
                 // Only the non-identifying capability fields are sent.
-                "_siriInfo" to mapOf(
-                    "collectorElectionVersion" to 1.0,
-                    "deviceCapabilities" to mapOf("seymourEnabled" to 1, "voiceTriggerEnabled" to 2),
-                ),
+                "_siriInfo" to siriInfo(),
                 "_bf" to 0,
                 "_cf" to 512,
                 "_clFl" to 128,
@@ -225,12 +233,41 @@ class AppleTvRemote(
         Log.d { "Apple TV _systemInfo keys: ${info?.keys}" }
         // Logged in pieces: the host log caps line length. Byte strings are
         // shown as their size and first bytes so identifiers stay readable.
+        @Suppress("UNCHECKED_CAST")
+        (info?.get("_siriInfo") as? Map<Any?, Any?>)?.let { onPeerSiriInfo?.invoke(it) }
         info?.get("_siriInfo")?.let { siri ->
             describe(siri).chunked(200).forEachIndexed { i, part -> Log.d { "Apple TV _siriInfo [${i + 1}]: $part" } }
         }
         info?.get("_stA")?.let { st ->
             describe(st).chunked(200).forEachIndexed { i, part -> Log.d { "Apple TV _stA [${i + 1}]: $part" } }
         }
+    }
+
+    private fun siriInfo(): Map<String, Any?> {
+        val info = LinkedHashMap<String, Any?>()
+        info["collectorElectionVersion"] = 1.0
+        info["deviceCapabilities"] = mapOf("seymourEnabled" to 1, "voiceTriggerEnabled" to 2)
+        val peer = peerSiriInfo ?: return info
+        (peer["sharedDataProtoBuf"] as? ByteArray)?.let { info["sharedDataProtoBuf"] = it }
+        @Suppress("UNCHECKED_CAST")
+        val peerAudio = peer["audio-session-coordination.system-info"] as? Map<Any?, Any?>
+        peerAudio?.get("mediaRemoteGroupIdentifier")?.let {
+            info["audio-session-coordination.system-info"] = mapOf("mediaRemoteGroupIdentifier" to it)
+        }
+        @Suppress("UNCHECKED_CAST")
+        val peerData = peer["peerData"] as? Map<Any?, Any?>
+        info["peerData"] = linkedMapOf<String, Any?>(
+            // Stable per pairing, not random per connection.
+            "assistantIdentifier" to java.util.UUID.nameUUIDFromBytes(credentials.clientId).toString().uppercase(),
+            "aceVersion" to (peerData?.get("aceVersion") ?: "13.0-20A"),
+            "productType" to "iPhone14,3",
+            "userInterfaceIdiom" to "PHONE",
+            "userAssignedDeviceName" to deviceName,
+            "isSiriCloudSyncEnabled" to true,
+            "isLocationSharingDevice" to false,
+        )
+        Log.d { "presenting iPhone-style _siriInfo built from the Apple TV's: ${describe(info)}".take(400) }
+        return info
     }
 
     private fun describe(v: Any?): String = when (v) {

@@ -116,6 +116,12 @@ class AppleTvController(
     private suspend fun attempt(credentials: Credentials, port: Int) {
         Diagnostics.log("appletv", "connecting to ${device.host}:$port with stored credentials")
         val r = AppleTvRemote(device.host, port, credentials, scope)
+        // Experimental: present the Apple TV's own home-level Siri values back
+        // to it (see AppleTvRemote.peerSiriInfo). They are learnt on the first
+        // connection, so that one reconnects once to present them.
+        val hadPeerSiri = peerSiriCache[device.id] != null
+        r.peerSiriInfo = peerSiriCache[device.id]
+        r.onPeerSiriInfo = { peerSiriCache[device.id] = it }
         r.onDisconnect = { cause ->
             if (_state.value is ConnectionState.Connected) {
                 _state.value = ConnectionState.Error(cause?.message ?: "Connection lost")
@@ -154,6 +160,14 @@ class AppleTvController(
         remote = r
         r.connect()
         rememberPort(device, port)
+        if (!hadPeerSiri && peerSiriCache[device.id] != null) {
+            Diagnostics.log("siri-voice", "learnt the Apple TV's Siri details; reconnecting once to present them")
+            r.onDisconnect = null
+            r.close()
+            remote = null
+            return attempt(credentials, port)
+        }
+        if (hadPeerSiri) Diagnostics.log("siri-voice", "presented iPhone-style Siri details built from the Apple TV's")
         // A sleeping Apple TV still accepts connections, so ask rather than assume.
         r.subscribe("TVSystemStatus")
         val attention = runCatching { r.fetchAttentionState() }
@@ -401,6 +415,8 @@ class AppleTvController(
     }
 
     companion object {
+        /** The Apple TV's own _siriInfo per device, for this app process. */
+        private val peerSiriCache = java.util.concurrent.ConcurrentHashMap<String, Map<Any?, Any?>>()
         const val VOICE_RATE = 16_000
         const val VOICE_FRAME_SAMPLES = 320
         const val VOICE_BITRATE = 16_000
