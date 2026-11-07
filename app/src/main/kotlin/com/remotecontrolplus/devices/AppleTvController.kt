@@ -284,16 +284,16 @@ class AppleTvController(
     private val tocCounts = java.util.TreeMap<Int, Int>()
 
     /**
-     * Ways of scaling the key-4 level, one per hold in rotation. 0.4.15
-     * showed the waveform only moved with the RMS level x10 (32-bit float),
-     * so these push further: x30, x100, and a 60 dB meter scale.
+     * One test per hold, in rotation. 0.4.16: with the level scaled up, Siri
+     * recognised some words, so the open questions are quiet microphone audio
+     * (Android's VOICE_RECOGNITION source applies no gain) and the level.
      */
-    private enum class LevelVariant(val label: String) {
-        X30("level x30"),
-        X100("level x100, capped at 1"),
-        DB60("level on a 0-1 meter, -60 dB to 0 dB"),
+    private enum class LevelVariant(val label: String, val levelScale: Float, val audioGain: Float) {
+        BASELINE("audio as recorded, level x30", 30f, 1f),
+        GAIN4("audio boosted x4, level x30", 30f, 4f),
+        GAIN4_X100("audio boosted x4, level x100", 100f, 4f),
     }
-    private var levelVariant = LevelVariant.X30
+    private var levelVariant = LevelVariant.BASELINE
     @Volatile private var endpointRequested = false
 
     /** Log anything Siri-related the Apple TV says to us during a hold. */
@@ -325,7 +325,9 @@ class AppleTvController(
 
     override suspend fun sendVoice(session: Int, pcm: ByteArray) {
         val r = remote ?: throw NotConnectedException()
-        val packets = encoder?.encode(pcm) ?: return
+        val gain = levelVariant.audioGain
+        val audio = if (gain == 1f) pcm else boost(pcm, gain)
+        val packets = encoder?.encode(audio) ?: return
         synchronized(unsent) {
             var i = 0
             while (i + 1 < pcm.size) {
@@ -356,12 +358,8 @@ class AppleTvController(
             sentLevels += l
             l
         }
-        val sent: Float = when (levelVariant) {
-            LevelVariant.X30 -> (level * 30f).coerceAtMost(1f)
-            LevelVariant.X100 -> (level * 100f).coerceAtMost(1f)
-            LevelVariant.DB60 -> if (level <= 0f) 0f else
-                ((20f * kotlin.math.log10(level) + 60f) / 60f).coerceIn(0f, 1f)
-        }
+        // The level is measured on the recorded audio, before any boost.
+        val sent: Float = (level * levelVariant.levelScale).coerceAtMost(1f)
         synchronized(unsent) { sentLevels[sentLevels.size - 1] = sent }
         r.siriAudio(frames, sent)
         framesSent += frames.size
@@ -370,6 +368,20 @@ class AppleTvController(
         if (eventsSent == 1) {
             Diagnostics.log("siri-voice", "first _siA sent: ${frames.size} frames, sizes ${frames.map { it.size }}, level sent %.6f, t=%.3f s".format(sent, seconds))
         }
+    }
+
+    /** Gain with a soft limiter (tanh), so loud speech does not clip harshly. */
+    private fun boost(pcm: ByteArray, gain: Float): ByteArray {
+        val out = ByteArray(pcm.size)
+        var i = 0
+        while (i + 1 < pcm.size) {
+            val v = ((pcm[i].toInt() and 0xFF) or (pcm[i + 1].toInt() shl 8)).toShort() / 32768f
+            val y = (kotlin.math.tanh(v * gain) * 32767f).toInt()
+            out[i] = (y and 0xFF).toByte()
+            out[i + 1] = ((y shr 8) and 0xFF).toByte()
+            i += 2
+        }
+        return out
     }
 
     override suspend fun endVoice(session: Int) {
