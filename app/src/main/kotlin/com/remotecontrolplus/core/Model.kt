@@ -28,6 +28,8 @@ data class TvDevice(
     val model: String? = null,
     /** MAC address, when known, so standby devices can be woken with Wake-on-LAN. */
     val mac: String? = null,
+    /** The mDNS service name it was discovered under, kept even if the user renames it. */
+    val mdnsName: String? = null,
 )
 
 /** The controls shared across every device type. */

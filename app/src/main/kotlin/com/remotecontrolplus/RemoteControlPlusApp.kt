@@ -14,6 +14,7 @@ import com.remotecontrolplus.discovery.SubnetProbe
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /** Application-scoped dependencies; small enough not to need an injection framework. */
 class RemoteControlPlusApp : Application() {
@@ -30,6 +31,10 @@ class RemoteControlPlusApp : Application() {
     val repository by lazy { DeviceRepository(this, credentials) }
     val nsd by lazy { NsdDiscovery(this) }
     val discovery by lazy { DeviceDiscovery(nsd, SsdpDiscovery(this), SubnetProbe(this)) }
-    val controllers by lazy { ControllerFactory(appScope, nsd, credentials) }
+    val controllers by lazy {
+        ControllerFactory(appScope, nsd, credentials, onMoved = { moved ->
+            appScope.launch { repository.save(moved) }
+        })
+    }
     val remote by lazy { RemoteManager(appScope, repository, credentials, controllers) }
 }

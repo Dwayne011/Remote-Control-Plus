@@ -11,6 +11,8 @@ class ControllerFactory(
     private val scope: CoroutineScope,
     private val nsd: NsdDiscovery,
     private val credentials: com.remotecontrolplus.data.CredentialStore,
+    /** Saves a device whose address changed. */
+    private val onMoved: (TvDevice) -> Unit = {},
 ) {
     fun create(device: TvDevice, credential: String?): TvController = when (device.type) {
         DeviceType.SAMSUNG -> SamsungController(device, credential)
@@ -25,7 +27,11 @@ class ControllerFactory(
             cachedPort = { d -> nsd.cachedCompanionPort(d) },
             rememberPort = { d, port -> nsd.rememberCompanionPort(d, port) },
         )
-        DeviceType.GOOGLE_TV -> GoogleTvController(device, credential, scope)
+        DeviceType.GOOGLE_TV -> GoogleTvController(
+            device, credential, scope,
+            findHost = { d -> nsd.findAndroidTv(d) },
+            onMoved = onMoved,
+        )
         DeviceType.CHROMECAST -> ChromecastController(device, scope)
     }
 }

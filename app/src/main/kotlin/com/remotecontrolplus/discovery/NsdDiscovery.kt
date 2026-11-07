@@ -135,6 +135,23 @@ class NsdDiscovery(context: Context) {
             })
         }
 
+    /**
+     * The address a Google TV currently has. Google TV devices are stored by
+     * the address they were found at, and a router can hand them a new one, so
+     * when the stored address stops answering this looks the device up again
+     * by the name it advertises. Null if it is not on the network.
+     */
+    suspend fun findAndroidTv(device: TvDevice, timeoutMs: Long = 4000): String? = withContext(Dispatchers.IO) {
+        val wanted = device.mdnsName ?: device.name
+        val infos = browse(listOf(ANDROID_TV_SERVICE_TYPE), timeoutMs)
+        Diagnostics.log("mdns", "looking for Google TV '$wanted'; on the network: ${infos.joinToString { it.serviceName }.ifEmpty { "none" }}")
+        val match = infos.firstOrNull { it.serviceName == wanted }
+            ?: infos.firstOrNull { it.serviceName.equals(wanted, ignoreCase = true) }
+            ?: return@withContext null
+        val resolved = withTimeoutOrNull(3000) { resolve(match) } ?: return@withContext null
+        resolved.host?.hostAddress
+    }
+
     private fun toDevice(info: NsdServiceInfo, androidTvHosts: Set<String>): TvDevice? {
         val host = info.host?.hostAddress ?: return null
         val type = info.serviceType
@@ -158,6 +175,7 @@ class NsdDiscovery(context: Context) {
                 type = DeviceType.GOOGLE_TV,
                 host = host,
                 port = info.port,
+                mdnsName = info.serviceName,
             )
             type.contains(CAST_SERVICE_TYPE) -> {
                 if (host in androidTvHosts) return null

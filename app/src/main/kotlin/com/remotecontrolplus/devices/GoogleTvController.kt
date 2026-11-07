@@ -36,10 +36,18 @@ import remote.Remotemessage.RemoteKeyCode
  * during pairing; it is stored as PEM.
  */
 class GoogleTvController(
-    override val device: TvDevice,
+    initialDevice: TvDevice,
     private val serializedIdentity: String?,
     private val scope: CoroutineScope,
+    /** Looks the device up on the network when its stored address stops answering. */
+    private val findHost: suspend (TvDevice) -> String? = { null },
+    /** Called with the device at its new address, so it can be saved. */
+    private val onMoved: (TvDevice) -> Unit = {},
 ) : TvController, Pairable, VoiceCapable {
+
+    @Volatile
+    override var device: TvDevice = initialDevice
+        private set
 
     @Serializable
     private data class StoredIdentity(val certificatePem: String, val privateKeyPem: String)
@@ -75,6 +83,10 @@ class GoogleTvController(
             return
         }
         _state.value = ConnectionState.Connecting
+        connectAt(id, retryElsewhere = true)
+    }
+
+    private suspend fun connectAt(id: ClientIdentity, retryElsewhere: Boolean) {
         try {
             Diagnostics.log("googletv", "connecting to ${device.host}:6466 with stored certificate")
             val s = RemoteSession(device.host, id)
@@ -102,6 +114,21 @@ class GoogleTvController(
             // certificate, which is how "needs pairing" presents itself.
             val message = e.message ?: ""
             Diagnostics.log("googletv", "connect failed", e)
+            val unreachable = e is java.net.NoRouteToHostException || e is java.net.ConnectException ||
+                e is java.net.SocketTimeoutException
+            if (unreachable && retryElsewhere) {
+                val host = runCatching { findHost(device) }.getOrNull()
+                when {
+                    host == null -> Diagnostics.log("googletv", "'${device.name}' is not advertising on the network; is it plugged in and on this Wi-Fi?")
+                    host == device.host -> Diagnostics.log("googletv", "'${device.name}' is still advertised at ${device.host}")
+                    else -> {
+                        Diagnostics.log("googletv", "'${device.name}' moved from ${device.host} to $host; reconnecting there")
+                        device = device.copy(host = host)
+                        onMoved(device)
+                        return connectAt(id, retryElsewhere = false)
+                    }
+                }
+            }
             _state.value = if (e is javax.net.ssl.SSLException || "handshake" in message.lowercase()) {
                 ConnectionState.PairingRequired
             } else {
