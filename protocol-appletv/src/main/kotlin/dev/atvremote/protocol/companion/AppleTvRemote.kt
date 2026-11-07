@@ -222,7 +222,19 @@ class AppleTvRemote(
         @Suppress("UNCHECKED_CAST")
         val info = response["_c"] as? Map<Any?, Any?>
         Log.d { "Apple TV _systemInfo keys: ${info?.keys}" }
-        info?.get("_siriInfo")?.let { Log.d { "Apple TV _siriInfo: $it" } }
+        // Logged in pieces: the host log caps line length. Byte strings are
+        // shown as their size and first bytes so identifiers stay readable.
+        info?.get("_siriInfo")?.let { siri ->
+            describe(siri).chunked(200).forEachIndexed { i, part -> Log.d { "Apple TV _siriInfo [${i + 1}]: $part" } }
+        }
+        info?.get("_stA")?.let { Log.d { "Apple TV _stA: $it" } }
+    }
+
+    private fun describe(v: Any?): String = when (v) {
+        is ByteArray -> "<${v.size} bytes ${Log.hex(v, 16)}>"
+        is Map<*, *> -> v.entries.joinToString(", ", "{", "}") { "${it.key}=${describe(it.value)}" }
+        is List<*> -> v.joinToString(", ", "[", "]") { describe(it) }
+        else -> v.toString()
     }
 
     private suspend fun touchStart() {
