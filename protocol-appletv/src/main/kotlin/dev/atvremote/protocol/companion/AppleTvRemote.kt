@@ -162,6 +162,7 @@ class AppleTvRemote(
         touchStart()
         sessionStart()
         tvRemoteSessionStart()
+        siriSessionStart()
 
         startHeartbeat()
 
@@ -227,7 +228,9 @@ class AppleTvRemote(
         info?.get("_siriInfo")?.let { siri ->
             describe(siri).chunked(200).forEachIndexed { i, part -> Log.d { "Apple TV _siriInfo [${i + 1}]: $part" } }
         }
-        info?.get("_stA")?.let { Log.d { "Apple TV _stA: $it" } }
+        info?.get("_stA")?.let { st ->
+            describe(st).chunked(200).forEachIndexed { i, part -> Log.d { "Apple TV _stA [${i + 1}]: $part" } }
+        }
     }
 
     private fun describe(v: Any?): String = when (v) {
@@ -252,6 +255,22 @@ class AppleTvRemote(
         val content = response["_c"] as? Map<Any?, Any?>
         val remote = (content?.get("_sid") as? Long) ?: 0L
         sessionId = (remote shl 32) or local
+    }
+
+    /**
+     * Local change, experimental: the Apple TV lists a separate
+     * "com.apple.siri.companionlink" service type, and Rapport sessions are
+     * per service type, so Siri audio may need its own session. Never fatal.
+     */
+    private suspend fun siriSessionStart() {
+        val local = Random.nextLong(0, 1L shl 32)
+        runCatching {
+            client.request(
+                "_sessionStart",
+                mapOf("_srvT" to "com.apple.siri.companionlink", "_sid" to local),
+            )
+        }.onSuccess { Log.d { "Siri session (com.apple.siri.companionlink) started: ${describe(it["_c"])}" } }
+            .onFailure { Log.d { "Siri session (com.apple.siri.companionlink) refused: ${it.message}" } }
     }
 
     private suspend fun tvRemoteSessionStart() {
