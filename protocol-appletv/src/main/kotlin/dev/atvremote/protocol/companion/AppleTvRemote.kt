@@ -365,10 +365,11 @@ class AppleTvRemote(
 
     /**
      * One `_siA` event: [frames] concatenated in key 3, [level] in key 4 (the
-     * captures suggest a normalised RMS level, sent as a 32-bit float), and a
+     * captures suggest a normalised RMS level; a Float is sent as 32-bit, a
+     * Double as 64-bit), and a
      * {1: size, 2: offset} entry per frame in key 5.
      */
-    fun siriAudio(frames: List<ByteArray>, level: Float) {
+    fun siriAudio(frames: List<ByteArray>, level: Number) {
         val descriptors = ArrayList<Map<Int, Int>>(frames.size)
         var offset = 0
         for (f in frames) {

@@ -282,6 +282,14 @@ class AppleTvController(
     private var levelSamples = 0
     private val sentLevels = ArrayList<Float>()
     private val tocCounts = java.util.TreeMap<Int, Int>()
+
+    /** Ways of sending the key-4 level, one per hold in rotation. */
+    private enum class LevelVariant(val label: String) {
+        FLOAT32("level as a 32-bit float"),
+        FLOAT64("level as a 64-bit float"),
+        FLOAT32_X10("level x10 as a 32-bit float"),
+    }
+    private var levelVariant = LevelVariant.FLOAT32
     @Volatile private var endpointRequested = false
 
     /** Log anything Siri-related the Apple TV says to us during a hold. */
@@ -294,6 +302,7 @@ class AppleTvController(
     override suspend fun beginVoice(): Int {
         val r = remote ?: throw NotConnectedException()
         holdCount++
+        levelVariant = LevelVariant.entries[(holdCount - 1) % LevelVariant.entries.size]
         endpointRequested = false
         synchronized(unsent) { unsent.clear() }
         framesSent = 0; eventsSent = 0; bytesSent = 0
@@ -301,7 +310,7 @@ class AppleTvController(
         synchronized(unsent) { levelSumSquares = 0.0; levelSamples = 0; sentLevels.clear() }
         encoder = OpusEncoder(VOICE_RATE, VOICE_BITRATE)
         r.buttonDown(Button.SIRI)
-        Diagnostics.log("siri-voice", "hold #$holdCount: Siri button down (_hidC 10); sending _siriStart")
+        Diagnostics.log("siri-voice", "hold #$holdCount (test ${levelVariant.ordinal + 1} of 3: ${levelVariant.label}): Siri button down (_hidC 10); sending _siriStart")
         val response = runCatching { r.siriStart() }
         siriStartNanos = System.nanoTime()
         response
@@ -343,7 +352,12 @@ class AppleTvController(
             sentLevels += l
             l
         }
-        r.siriAudio(frames, level)
+        val sent: Number = when (levelVariant) {
+            LevelVariant.FLOAT32 -> level
+            LevelVariant.FLOAT64 -> level.toDouble()
+            LevelVariant.FLOAT32_X10 -> (level * 10f).coerceAtMost(1f)
+        }
+        r.siriAudio(frames, sent)
         framesSent += frames.size
         eventsSent++
         bytesSent += frames.sumOf { it.size }
@@ -366,7 +380,7 @@ class AppleTvController(
         }
         Diagnostics.log(
             "siri-voice",
-            "hold #$holdCount: released; $eventsSent _siA events, $framesSent frames, $bytesSent bytes; TV asked for endpoint=$endpointRequested",
+            "hold #$holdCount (${levelVariant.label}): released; $eventsSent _siA events, $framesSent frames, $bytesSent bytes; TV asked for endpoint=$endpointRequested",
         )
         val tocs = synchronized(tocCounts) { tocCounts.entries.joinToString { (t, n) -> "0x%02x (%s) x%d".format(t, describeToc(t), n) } }
         Diagnostics.log("siri-voice", "Opus frame types this hold: $tocs; the iPhone capture is all 0x48")
