@@ -193,9 +193,17 @@ class AppleTvRemote(
     }
 
     private suspend fun sendSystemInfo() {
-        client.request(
+        val response = client.request(
             "_systemInfo",
             mapOf(
+                // Local change: an iPhone's _systemInfo carries _siriInfo (shape
+                // from pyatv's golden test, tests/support/test_opack.py); without
+                // it the Apple TV may not treat this client as Siri-capable.
+                // Only the non-identifying capability fields are sent.
+                "_siriInfo" to mapOf(
+                    "collectorElectionVersion" to 1.0,
+                    "deviceCapabilities" to mapOf("seymourEnabled" to 1, "voiceTriggerEnabled" to 2),
+                ),
                 "_bf" to 0,
                 "_cf" to 512,
                 "_clFl" to 128,
@@ -210,6 +218,10 @@ class AppleTvRemote(
                 "name" to deviceName,
             ),
         )
+        @Suppress("UNCHECKED_CAST")
+        val info = response["_c"] as? Map<Any?, Any?>
+        Log.d { "Apple TV _systemInfo keys: ${info?.keys}" }
+        info?.get("_siriInfo")?.let { Log.d { "Apple TV _siriInfo: $it" } }
     }
 
     private suspend fun touchStart() {
