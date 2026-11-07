@@ -263,6 +263,10 @@ class AppleTvController(
     private var eventsSent = 0
     private var bytesSent = 0
     private var holdCount = 0
+    // Loudness of the audio since the last _siA, for key 4.
+    private var levelSumSquares = 0.0
+    private var levelSamples = 0
+    private val sentLevels = ArrayList<Float>()
     private val tocCounts = java.util.TreeMap<Int, Int>()
     @Volatile private var endpointRequested = false
 
@@ -280,6 +284,7 @@ class AppleTvController(
         synchronized(unsent) { unsent.clear() }
         framesSent = 0; eventsSent = 0; bytesSent = 0
         synchronized(tocCounts) { tocCounts.clear() }
+        synchronized(unsent) { levelSumSquares = 0.0; levelSamples = 0; sentLevels.clear() }
         encoder = OpusEncoder(VOICE_RATE, VOICE_BITRATE)
         r.buttonDown(Button.SIRI)
         Diagnostics.log("siri-voice", "hold #$holdCount: Siri button down (_hidC 10); sending _siriStart")
@@ -294,6 +299,15 @@ class AppleTvController(
     override suspend fun sendVoice(session: Int, pcm: ByteArray) {
         val r = remote ?: throw NotConnectedException()
         val packets = encoder?.encode(pcm) ?: return
+        synchronized(unsent) {
+            var i = 0
+            while (i + 1 < pcm.size) {
+                val v = ((pcm[i].toInt() and 0xFF) or (pcm[i + 1].toInt() shl 8)).toShort() / 32768.0
+                levelSumSquares += v * v
+                levelSamples++
+                i += 2
+            }
+        }
         if (packets.isEmpty()) return
         synchronized(tocCounts) {
             for (p in packets) if (p.isNotEmpty()) tocCounts.merge(p[0].toInt() and 0xFF, 1, Int::plus)
@@ -307,12 +321,20 @@ class AppleTvController(
 
     private fun sendBatch(r: AppleTvRemote, frames: List<ByteArray>) {
         val seconds = (System.nanoTime() - siriStartNanos) / 1_000_000_000.0
-        r.siriAudio(frames, seconds)
+        // Key 4 in the captures starts near 1e-6 and rises to ~0.045 while
+        // talking, so it reads as a normalised RMS level, not a timestamp.
+        val level = synchronized(unsent) {
+            val l = if (levelSamples > 0) kotlin.math.sqrt(levelSumSquares / levelSamples).toFloat() else 0f
+            levelSumSquares = 0.0; levelSamples = 0
+            sentLevels += l
+            l
+        }
+        r.siriAudio(frames, level)
         framesSent += frames.size
         eventsSent++
         bytesSent += frames.sumOf { it.size }
         if (eventsSent == 1) {
-            Diagnostics.log("siri-voice", "first _siA sent: ${frames.size} frames, sizes ${frames.map { it.size }}, t=%.3f s".format(seconds))
+            Diagnostics.log("siri-voice", "first _siA sent: ${frames.size} frames, sizes ${frames.map { it.size }}, level %.6f, t=%.3f s".format(level, seconds))
         }
     }
 
@@ -334,6 +356,15 @@ class AppleTvController(
         )
         val tocs = synchronized(tocCounts) { tocCounts.entries.joinToString { (t, n) -> "0x%02x (%s) x%d".format(t, describeToc(t), n) } }
         Diagnostics.log("siri-voice", "Opus frame types this hold: $tocs; the iPhone capture is all 0x48")
+        val levels = synchronized(unsent) { sentLevels.toList() }
+        if (levels.isNotEmpty()) {
+            Diagnostics.log(
+                "siri-voice",
+                "levels sent (key 4): min %.6f, max %.6f, first 10: %s".format(
+                    levels.min(), levels.max(), levels.take(10).joinToString { "%.4f".format(it) },
+                ),
+            )
+        }
     }
 
     override suspend fun beginVoicePairing(): PairingHandle {

@@ -283,10 +283,11 @@ class AppleTvRemote(
     suspend fun siriStop(): Map<Any?, Any?> = client.request("_siriStop")
 
     /**
-     * One `_siA` event: [frames] concatenated in key 3, [seconds] since
-     * `_siriStart` in key 4, and a {1: size, 2: offset} entry per frame in key 5.
+     * One `_siA` event: [frames] concatenated in key 3, [level] in key 4 (the
+     * captures suggest a normalised RMS level, sent as a 32-bit float), and a
+     * {1: size, 2: offset} entry per frame in key 5.
      */
-    fun siriAudio(frames: List<ByteArray>, seconds: Double) {
+    fun siriAudio(frames: List<ByteArray>, level: Float) {
         val descriptors = ArrayList<Map<Int, Int>>(frames.size)
         var offset = 0
         for (f in frames) {
@@ -296,7 +297,7 @@ class AppleTvRemote(
         val payload = ByteArray(offset)
         var pos = 0
         for (f in frames) { f.copyInto(payload, pos); pos += f.size }
-        client.sendEvent("_siA", mapOf(3 to payload, 4 to seconds, 5 to descriptors))
+        client.sendEvent("_siA", mapOf(3 to payload, 4 to level, 5 to descriptors))
     }
 
     suspend fun buttonDown(button: Button) = hid(button, down = true)
