@@ -1,5 +1,6 @@
 package dev.atvremote.protocol.companion
 
+import dev.atvremote.protocol.Log
 import dev.atvremote.protocol.hap.Credentials
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
