@@ -283,13 +283,17 @@ class AppleTvController(
     private val sentLevels = ArrayList<Float>()
     private val tocCounts = java.util.TreeMap<Int, Int>()
 
-    /** Ways of sending the key-4 level, one per hold in rotation. */
+    /**
+     * Ways of scaling the key-4 level, one per hold in rotation. 0.4.15
+     * showed the waveform only moved with the RMS level x10 (32-bit float),
+     * so these push further: x30, x100, and a 60 dB meter scale.
+     */
     private enum class LevelVariant(val label: String) {
-        FLOAT32("level as a 32-bit float"),
-        FLOAT64("level as a 64-bit float"),
-        FLOAT32_X10("level x10 as a 32-bit float"),
+        X30("level x30"),
+        X100("level x100, capped at 1"),
+        DB60("level on a 0-1 meter, -60 dB to 0 dB"),
     }
-    private var levelVariant = LevelVariant.FLOAT32
+    private var levelVariant = LevelVariant.X30
     @Volatile private var endpointRequested = false
 
     /** Log anything Siri-related the Apple TV says to us during a hold. */
@@ -352,17 +356,19 @@ class AppleTvController(
             sentLevels += l
             l
         }
-        val sent: Number = when (levelVariant) {
-            LevelVariant.FLOAT32 -> level
-            LevelVariant.FLOAT64 -> level.toDouble()
-            LevelVariant.FLOAT32_X10 -> (level * 10f).coerceAtMost(1f)
+        val sent: Float = when (levelVariant) {
+            LevelVariant.X30 -> (level * 30f).coerceAtMost(1f)
+            LevelVariant.X100 -> (level * 100f).coerceAtMost(1f)
+            LevelVariant.DB60 -> if (level <= 0f) 0f else
+                ((20f * kotlin.math.log10(level) + 60f) / 60f).coerceIn(0f, 1f)
         }
+        synchronized(unsent) { sentLevels[sentLevels.size - 1] = sent }
         r.siriAudio(frames, sent)
         framesSent += frames.size
         eventsSent++
         bytesSent += frames.sumOf { it.size }
         if (eventsSent == 1) {
-            Diagnostics.log("siri-voice", "first _siA sent: ${frames.size} frames, sizes ${frames.map { it.size }}, level %.6f, t=%.3f s".format(level, seconds))
+            Diagnostics.log("siri-voice", "first _siA sent: ${frames.size} frames, sizes ${frames.map { it.size }}, level sent %.6f, t=%.3f s".format(sent, seconds))
         }
     }
 
