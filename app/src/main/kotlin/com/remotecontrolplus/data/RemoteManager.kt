@@ -143,6 +143,15 @@ class RemoteManager(
 
     private var reconnectJob: Job? = null
 
+    /** Called whenever a command is sent, so the lock-screen remote can appear and stay. */
+    var onActivity: (() -> Unit)? = null
+
+    /** Drop the connection after a long idle spell in the background; it is picked up again on demand. */
+    fun disconnectIdle() {
+        Diagnostics.log("app", "idle in the background; disconnecting")
+        _controller.value?.disconnect()
+    }
+
     fun reconnect(): Job {
         // Two triggers (pop-up and foreground) can land in the same instant;
         // a second parallel connection just races the first and is thrown away.
@@ -171,6 +180,7 @@ class RemoteManager(
     /** Press and hold [key] (the OK button held down), with one haptic click. */
     fun longPress(key: RemoteKey) = scope.launch {
         val c = _controller.value ?: return@launch
+        onActivity?.invoke()
         Haptics.click()
         Diagnostics.log("app", "long press $key on ${c.device.name}")
         runCatching { withContext(Dispatchers.IO) { c.longPress(key) } }.onFailure {
@@ -181,6 +191,7 @@ class RemoteManager(
 
     fun press(key: RemoteKey, haptic: Boolean = true) = scope.launch {
         val c = _controller.value ?: return@launch
+        onActivity?.invoke()
         if (haptic) Haptics.click()
         Diagnostics.log("app", "press $key on ${c.device.name}")
         runCatching { withContext(Dispatchers.IO) { c.sendKey(key) } }.onFailure {
@@ -214,6 +225,7 @@ class RemoteManager(
 
     fun swipe(direction: RemoteKey) = scope.launch {
         val c = _controller.value ?: return@launch
+        onActivity?.invoke()
         Haptics.tick()
         Diagnostics.log("app", "swipe $direction on ${c.device.name}")
         runCatching { withContext(Dispatchers.IO) { c.swipe(direction) } }.onFailure {

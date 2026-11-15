@@ -6,6 +6,10 @@
     <!-- Hold-to-talk voice for Google TV assistants. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- The lock-screen remote: a media-style notification kept up by a foreground service. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <!-- SSDP discovery of Samsung, LG and Roku needs multicast on Wi-Fi. -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
@@ -36,6 +40,11 @@
             android:noHistory="true"
             android:taskAffinity=""
             android:theme="@style/Theme.RemoteControlPlus.Popup" />
+
+        <service
+            android:name=".LockScreenRemoteService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
         <service
             android:name=".RemoteTileService"

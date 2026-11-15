@@ -48,6 +48,14 @@ Holding the centre button, or holding still on the swipe pad, sends a one-second
 Google TV, Samsung and Roku; other devices get a normal press).
 The connection is picked up again automatically when the app returns to the foreground.
 
+## Lock-screen remote
+
+After you use the remote, a media-style notification appears on the lock screen and in the shade
+with previous, play/pause, next and volume buttons; tapping it opens the full remote. While it is
+showing, the phone's volume buttons control the TV. It keeps the connection to the TV open, removes
+itself after 30 minutes without a button press, and can be swiped away. The TV does not report
+what is playing, so the play/pause icon follows the button rather than the TV.
+
 ## Quick Settings tile
 
 Add the **Remote** tile from the notification shade's Edit tiles screen.

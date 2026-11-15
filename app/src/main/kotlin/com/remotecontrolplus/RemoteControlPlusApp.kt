@@ -24,6 +24,7 @@ class RemoteControlPlusApp : Application() {
         dev.atvremote.protocol.Log.enabled = true
         Haptics.init(this)
         Diagnostics.log("app", "started")
+        registerActivityLifecycleCallbacks(visibility)
     }
 
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -36,5 +37,23 @@ class RemoteControlPlusApp : Application() {
             appScope.launch { repository.save(moved) }
         })
     }
-    val remote by lazy { RemoteManager(appScope, repository, credentials, controllers) }
+    val remote by lazy {
+        RemoteManager(appScope, repository, credentials, controllers).also { manager ->
+            manager.onActivity = { LockScreenRemoteService.noteActivity(this, isVisible) }
+        }
+    }
+
+    /** Number of this app's activities currently on screen. */
+    private val visibleActivities = java.util.concurrent.atomic.AtomicInteger(0)
+    val isVisible: Boolean get() = visibleActivities.get() > 0
+
+    private val visibility = object : ActivityLifecycleCallbacks {
+        override fun onActivityStarted(activity: android.app.Activity) { visibleActivities.incrementAndGet() }
+        override fun onActivityStopped(activity: android.app.Activity) { visibleActivities.decrementAndGet() }
+        override fun onActivityCreated(activity: android.app.Activity, state: android.os.Bundle?) = Unit
+        override fun onActivityResumed(activity: android.app.Activity) = Unit
+        override fun onActivityPaused(activity: android.app.Activity) = Unit
+        override fun onActivitySaveInstanceState(activity: android.app.Activity, state: android.os.Bundle) = Unit
+        override fun onActivityDestroyed(activity: android.app.Activity) = Unit
+    }
 }
