@@ -169,12 +169,12 @@ class LockScreenRemoteService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
-            .addAction(action(R.drawable.ic_n_prev, "Back", ACTION_PREVIOUS))
+            .addAction(action(R.drawable.ic_n_prev, "\u2190", ACTION_PREVIOUS))
             .addAction(
                 if (playing) action(R.drawable.ic_n_pause, "Pause", ACTION_PLAY_PAUSE)
                 else action(R.drawable.ic_n_play, "Play", ACTION_PLAY_PAUSE),
             )
-            .addAction(action(R.drawable.ic_n_next, "Forward", ACTION_NEXT))
+            .addAction(action(R.drawable.ic_n_next, "\u2192", ACTION_NEXT))
         // Android 16 Live Update: ask for the notification to be promoted (top
         // of the lock screen, status-bar chip). Older versions ignore the extra
         // and show an ordinary pinned notification.
