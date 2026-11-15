@@ -19,6 +19,10 @@ import com.remotecontrolplus.ui.theme.RemoteControlPlusTheme
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
 
+    private val notificationPermission = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { granted -> Diagnostics.log("app", "notification permission ${if (granted) "granted" else "denied"}") }
+
     override fun onStart() {
         super.onStart()
         Diagnostics.log("app", "activity in foreground")
@@ -33,6 +37,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // The lock-screen remote is a notification; Android 13+ needs the user's say-so.
+        if (savedInstanceState == null && android.os.Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
         setContent {
             RemoteControlPlusTheme {
                 AppNavHost(viewModel)

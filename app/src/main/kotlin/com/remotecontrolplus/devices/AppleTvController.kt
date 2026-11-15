@@ -217,6 +217,10 @@ class AppleTvController(
      * Apple TV has no mute command; set the volume to zero and restore it.
      * Only possible when the Apple TV routes volume (HDMI-CEC or eARC).
      */
+    override suspend fun skip(forward: Boolean) {
+        (remote ?: throw NotConnectedException()).skipBy(if (forward) 10.0 else -10.0)
+    }
+
     override suspend fun longPress(key: RemoteKey) {
         val r = remote ?: throw NotConnectedException()
         if (key == RemoteKey.SELECT) r.press(Button.SELECT, holdMs = LONG_PRESS_MS) else sendKey(key)

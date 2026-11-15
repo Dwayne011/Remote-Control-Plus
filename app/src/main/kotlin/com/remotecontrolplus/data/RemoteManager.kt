@@ -146,11 +146,6 @@ class RemoteManager(
     /** Called whenever a command is sent, so the lock-screen remote can appear and stay. */
     var onActivity: (() -> Unit)? = null
 
-    /** Drop the connection after a long idle spell in the background; it is picked up again on demand. */
-    fun disconnectIdle() {
-        Diagnostics.log("app", "idle in the background; disconnecting")
-        _controller.value?.disconnect()
-    }
 
     fun reconnect(): Job {
         // Two triggers (pop-up and foreground) can land in the same instant;
@@ -174,6 +169,17 @@ class RemoteManager(
         ) {
             Diagnostics.log("app", "$reason with state $state; reconnecting")
             reconnect()
+        }
+    }
+
+    /** Jump back or forward, from the lock-screen remote. */
+    fun skip(forward: Boolean) = scope.launch {
+        val c = _controller.value ?: return@launch
+        Haptics.click()
+        Diagnostics.log("app", "skip ${if (forward) "forward" else "back"} on ${c.device.name}")
+        runCatching { withContext(Dispatchers.IO) { c.skip(forward) } }.onFailure {
+            Diagnostics.log("app", "skip failed", it)
+            _messages.tryEmit(it.message ?: "Command failed")
         }
     }
 

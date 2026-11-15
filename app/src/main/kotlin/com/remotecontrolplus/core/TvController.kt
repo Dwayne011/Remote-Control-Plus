@@ -36,6 +36,9 @@ interface TvController {
      */
     suspend fun longPress(key: RemoteKey) = sendKey(key)
 
+    /** Jump back or forward a little: ten seconds where the device can, else its rewind/forward key. */
+    suspend fun skip(forward: Boolean) = sendKey(if (forward) RemoteKey.NEXT else RemoteKey.PREVIOUS)
+
     /**
      * A swipe on the touch pad in one of UP/DOWN/LEFT/RIGHT. Devices with a
      * real trackpad (Apple TV) translate it to a gesture; others treat it as

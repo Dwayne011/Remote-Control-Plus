@@ -15,7 +15,6 @@ import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Bundle
 import android.os.IBinder
-import android.os.SystemClock
 import com.remotecontrolplus.core.ConnectionState
 import com.remotecontrolplus.core.Diagnostics
 import com.remotecontrolplus.core.RemoteKey
@@ -23,15 +22,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * The lock-screen remote: a media-style notification with previous, play/pause,
- * next and volume, backed by a media session so the phone's volume buttons
- * control the TV. It appears after the remote is used and removes itself after
- * [IDLE_MS] without a button press, or when swiped away.
+ * The lock-screen remote: an Android 16 Live Update (a promoted ongoing
+ * notification) with back, play/pause and forward, shown after the remote is
+ * used and kept until the user dismisses it. A media session rides along so
+ * the phone's volume buttons control the TV. Live Updates must use the
+ * standard notification layout, which is why there are only three buttons.
  */
 class LockScreenRemoteService : Service() {
 
@@ -58,13 +57,8 @@ class LockScreenRemoteService : Service() {
             setCallback(object : MediaSession.Callback() {
                 override fun onPlay() { playing = true; act(RemoteKey.PLAY); refresh() }
                 override fun onPause() { playing = false; act(RemoteKey.PAUSE); refresh() }
-                override fun onSkipToPrevious() = act(RemoteKey.PREVIOUS)
-                override fun onSkipToNext() = act(RemoteKey.NEXT)
-                override fun onCustomAction(action: String, extras: Bundle?) = when (action) {
-                    ACTION_VOL_DOWN -> act(RemoteKey.VOLUME_DOWN)
-                    ACTION_VOL_UP -> act(RemoteKey.VOLUME_UP)
-                    else -> Unit
-                }
+                override fun onSkipToPrevious() = skip(forward = false)
+                override fun onSkipToNext() = skip(forward = true)
             })
             // The phone's volume buttons adjust the TV while this session is the active one.
             setPlaybackToRemote(object : VolumeProvider(VOLUME_CONTROL_RELATIVE, 100, 50) {
@@ -79,17 +73,6 @@ class LockScreenRemoteService : Service() {
         Diagnostics.log("lockscreen", "lock-screen remote shown")
 
         scope.launch { app.remote.selected.collect { refresh() } }
-        scope.launch {
-            while (true) {
-                delay(60_000)
-                if (SystemClock.elapsedRealtime() - lastActivity >= IDLE_MS) {
-                    Diagnostics.log("lockscreen", "no button press for 30 minutes; removing the lock-screen remote")
-                    if (!app.isVisible) app.remote.disconnectIdle()
-                    stopSelf()
-                    return@launch
-                }
-            }
-        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -103,10 +86,8 @@ class LockScreenRemoteService : Service() {
                 act(if (playing) RemoteKey.PLAY else RemoteKey.PAUSE)
                 refresh()
             }
-            ACTION_PREVIOUS -> act(RemoteKey.PREVIOUS)
-            ACTION_NEXT -> act(RemoteKey.NEXT)
-            ACTION_VOL_DOWN -> act(RemoteKey.VOLUME_DOWN)
-            ACTION_VOL_UP -> act(RemoteKey.VOLUME_UP)
+            ACTION_PREVIOUS -> skip(forward = false)
+            ACTION_NEXT -> skip(forward = true)
         }
         return START_NOT_STICKY
     }
@@ -120,15 +101,19 @@ class LockScreenRemoteService : Service() {
     }
 
     /** Send [key], reconnecting first if the connection dropped while the phone was locked. */
-    private fun act(key: RemoteKey, haptic: Boolean = true) {
-        lastActivity = SystemClock.elapsedRealtime()
+    private fun act(key: RemoteKey, haptic: Boolean = true) = withConnection("$key") { it.press(key, haptic) }
+
+    /** Back or forward: a 10-second skip where the TV supports it, else its rewind/forward key. */
+    private fun skip(forward: Boolean) = withConnection(if (forward) "forward" else "back") { it.skip(forward) }
+
+    private fun withConnection(what: String, send: (com.remotecontrolplus.data.RemoteManager) -> Unit) {
         scope.launch {
             val remote = app.remote
             if (remote.connectionState.value !is ConnectionState.Connected) {
-                Diagnostics.log("lockscreen", "$key pressed while ${remote.connectionState.value}; reconnecting first")
+                Diagnostics.log("lockscreen", "$what pressed while ${remote.connectionState.value}; reconnecting first")
                 withTimeoutOrNull(10_000) { remote.reconnect().join() }
             }
-            remote.press(key, haptic)
+            send(remote)
         }
     }
 
@@ -146,8 +131,6 @@ class LockScreenRemoteService : Service() {
                     PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE or
                         PlaybackState.ACTION_SKIP_TO_PREVIOUS or PlaybackState.ACTION_SKIP_TO_NEXT,
                 )
-                .addCustomAction(PlaybackState.CustomAction.Builder(ACTION_VOL_DOWN, "Volume down", R.drawable.ic_n_vol_down).build())
-                .addCustomAction(PlaybackState.CustomAction.Builder(ACTION_VOL_UP, "Volume up", R.drawable.ic_n_vol_up).build())
                 .setState(
                     if (playing) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,
                     PlaybackState.PLAYBACK_POSITION_UNKNOWN,
@@ -175,53 +158,49 @@ class LockScreenRemoteService : Service() {
             this, 0, Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        // Android 13+ draws the buttons from the media session; these are for Android 12.
-        return Notification.Builder(this, CHANNEL)
+        val builder = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_tile_remote)
             .setContentTitle(name)
-            .setContentText("Remote Control Plus")
+            .setContentText(if (playing) "Remote ready" else "Paused")
             .setContentIntent(open)
             .setDeleteIntent(service(ACTION_DISMISS))
             .setVisibility(Notification.VISIBILITY_PUBLIC)
-            .setOngoing(false)
+            .setCategory(Notification.CATEGORY_TRANSPORT)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
             .setShowWhen(false)
-            .addAction(action(R.drawable.ic_n_prev, "Previous", ACTION_PREVIOUS))
+            .addAction(action(R.drawable.ic_n_prev, "Back", ACTION_PREVIOUS))
             .addAction(
                 if (playing) action(R.drawable.ic_n_pause, "Pause", ACTION_PLAY_PAUSE)
                 else action(R.drawable.ic_n_play, "Play", ACTION_PLAY_PAUSE),
             )
-            .addAction(action(R.drawable.ic_n_next, "Next", ACTION_NEXT))
-            .addAction(action(R.drawable.ic_n_vol_down, "Volume down", ACTION_VOL_DOWN))
-            .addAction(action(R.drawable.ic_n_vol_up, "Volume up", ACTION_VOL_UP))
-            .setStyle(
-                Notification.MediaStyle()
-                    .setMediaSession(session.sessionToken)
-                    .setShowActionsInCompactView(0, 1, 2),
-            )
-            .build()
+            .addAction(action(R.drawable.ic_n_next, "Forward", ACTION_NEXT))
+        // Android 16 Live Update: ask for the notification to be promoted (top
+        // of the lock screen, status-bar chip). Older versions ignore the extra
+        // and show an ordinary pinned notification.
+        builder.addExtras(Bundle().apply { putBoolean(EXTRA_REQUEST_PROMOTED_ONGOING, true) })
+        if (android.os.Build.VERSION.SDK_INT >= 36) builder.setShortCriticalText("Remote")
+        return builder.build()
     }
 
     companion object {
         private const val CHANNEL = "lock_screen_remote"
         private const val NOTIFICATION_ID = 41
-        private const val IDLE_MS = 30 * 60_000L
+        /** Notification.EXTRA_REQUEST_PROMOTED_ONGOING (API 36). */
+        private const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
         private const val ACTION_DISMISS = "com.remotecontrolplus.lock.DISMISS"
         private const val ACTION_PLAY_PAUSE = "com.remotecontrolplus.lock.PLAY_PAUSE"
         private const val ACTION_PREVIOUS = "com.remotecontrolplus.lock.PREVIOUS"
         private const val ACTION_NEXT = "com.remotecontrolplus.lock.NEXT"
-        private const val ACTION_VOL_DOWN = "com.remotecontrolplus.lock.VOL_DOWN"
-        private const val ACTION_VOL_UP = "com.remotecontrolplus.lock.VOL_UP"
 
         @Volatile private var running = false
-        @Volatile private var lastActivity = 0L
 
         /**
-         * The remote was just used. Restarts the idle timer, and shows the
-         * lock-screen remote if it is not up; that is only possible while the
-         * app is on screen, which is when presses from the app happen.
+         * The remote was just used: show the lock-screen remote if it is not
+         * up. Starting it is only possible while the app is on screen, which
+         * is when presses from the app happen.
          */
         fun noteActivity(context: Context, visible: Boolean) {
-            lastActivity = SystemClock.elapsedRealtime()
             if (running || !visible) return
             runCatching {
                 context.startForegroundService(Intent(context, LockScreenRemoteService::class.java))
