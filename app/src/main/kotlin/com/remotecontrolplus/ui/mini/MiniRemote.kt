@@ -170,6 +170,7 @@ fun MiniRemote(remote: RemoteManager, onOpenFull: () -> Unit, onDismiss: () -> U
                     onKey = press,
                     onSwipe = { remote.swipe(it) },
                     onRepeat = { remote.press(it, haptic = false) },
+                    onLongPress = { remote.longPress(it) },
                     modifier = if (padMode == "dpad") {
                         Modifier.size(PAD_HEIGHT)
                     } else {

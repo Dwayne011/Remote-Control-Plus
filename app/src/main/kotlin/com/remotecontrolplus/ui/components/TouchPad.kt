@@ -1,7 +1,7 @@
 package com.remotecontrolplus.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -68,6 +68,8 @@ fun TouchPad(
     onTap: (RemoteKey) -> Unit = onKey,
     /** Repeats while an arrow is held; defaults to [onKey]. */
     onRepeat: (RemoteKey) -> Unit = onKey,
+    /** Press and hold on the centre button or the swipe surface. */
+    onLongPress: (RemoteKey) -> Unit = {},
     modifier: Modifier = Modifier,
     showHint: Boolean = false,
 ) {
@@ -76,9 +78,10 @@ fun TouchPad(
     val gestureModifier = if (mode == "swipe" && enabled) {
         Modifier
             .pointerInput(Unit) {
-                detectTapGestures(onTap = {
-                    onTap(RemoteKey.SELECT)
-                })
+                detectTapGestures(
+                    onTap = { onTap(RemoteKey.SELECT) },
+                    onLongPress = { onLongPress(RemoteKey.SELECT) },
+                )
             }
             .pointerInput(Unit) {
                 var total = Offset.Zero
@@ -131,7 +134,12 @@ fun TouchPad(
                     .aspectRatio(1f)
                     .clip(CircleShape)
                     .background(if (enabled) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.surfaceContainer)
-                    .clickable(enabled = enabled) { onKey(RemoteKey.SELECT) },
+                    .combinedClickable(
+                        enabled = enabled,
+                        onClick = { onKey(RemoteKey.SELECT) },
+                        onLongClick = { onLongPress(RemoteKey.SELECT) },
+                        hapticFeedbackEnabled = false,
+                    ),
             )
         }
     } else {
@@ -155,7 +163,7 @@ fun TouchPad(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     HintLine(Icons.Filled.Swipe, "Swipe to navigate")
-                    HintLine(Icons.Filled.TouchApp, "Tap to select")
+                    HintLine(Icons.Filled.TouchApp, "Tap to select, hold for long press")
                 }
             }
         }

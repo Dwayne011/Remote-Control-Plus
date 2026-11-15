@@ -76,6 +76,24 @@ class SamsungController(
         _state.value = ConnectionState.Disconnected
     }
 
+    override suspend fun longPress(key: RemoteKey) {
+        if (key != RemoteKey.SELECT) return sendKey(key)
+        for (cmd in listOf("Press", "Release")) {
+            send(
+                buildJsonObject {
+                    put("method", "ms.remote.control")
+                    putJsonObject("params") {
+                        put("Cmd", cmd)
+                        put("DataOfCmd", "KEY_ENTER")
+                        put("Option", "false")
+                        put("TypeOfRemote", "SendRemoteKey")
+                    }
+                }.toString(),
+            )
+            if (cmd == "Press") kotlinx.coroutines.delay(1000)
+        }
+    }
+
     override suspend fun sendKey(key: RemoteKey) {
         val code = when (key) {
             RemoteKey.POWER_ON -> {

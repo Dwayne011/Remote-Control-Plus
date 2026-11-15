@@ -168,6 +168,17 @@ class RemoteManager(
         }
     }
 
+    /** Press and hold [key] (the OK button held down), with one haptic click. */
+    fun longPress(key: RemoteKey) = scope.launch {
+        val c = _controller.value ?: return@launch
+        Haptics.click()
+        Diagnostics.log("app", "long press $key on ${c.device.name}")
+        runCatching { withContext(Dispatchers.IO) { c.longPress(key) } }.onFailure {
+            Diagnostics.log("app", "long press $key failed", it)
+            _messages.tryEmit(it.message ?: "Command failed")
+        }
+    }
+
     fun press(key: RemoteKey, haptic: Boolean = true) = scope.launch {
         val c = _controller.value ?: return@launch
         if (haptic) Haptics.click()

@@ -30,6 +30,13 @@ interface TvController {
     suspend fun sendKey(key: RemoteKey)
 
     /**
+     * Press and hold [key] for about a second, like holding the button on the
+     * real remote (context menus, rearranging apps). Devices that cannot hold
+     * a key send a normal press.
+     */
+    suspend fun longPress(key: RemoteKey) = sendKey(key)
+
+    /**
      * A swipe on the touch pad in one of UP/DOWN/LEFT/RIGHT. Devices with a
      * real trackpad (Apple TV) translate it to a gesture; others treat it as
      * the matching key.

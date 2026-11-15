@@ -102,10 +102,17 @@ class RokuController(override val device: TvDevice) : TvController {
         for (ch in text) keypress("Lit_" + URLEncoder.encode(ch.toString(), "UTF-8"))
     }
 
-    private suspend fun keypress(name: String) = withContext(Dispatchers.IO) {
+    override suspend fun longPress(key: RemoteKey) {
+        if (key != RemoteKey.SELECT) return sendKey(key)
+        keypress("Select", "keydown")
+        kotlinx.coroutines.delay(1000)
+        keypress("Select", "keyup")
+    }
+
+    private suspend fun keypress(name: String, action: String = "keypress") = withContext(Dispatchers.IO) {
         http.newCall(
             Request.Builder()
-                .url("$base/keypress/$name")
+                .url("$base/$action/$name")
                 .post(ByteArray(0).toRequestBody())
                 .build(),
         ).execute().use {

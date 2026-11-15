@@ -146,6 +146,14 @@ class GoogleTvController(
         _state.value = ConnectionState.Disconnected
     }
 
+    override suspend fun longPress(key: RemoteKey) {
+        val s = session ?: throw NotConnectedException()
+        if (key != RemoteKey.SELECT) return sendKey(key)
+        s.holdKey(RemoteKeyCode.KEYCODE_DPAD_CENTER)
+        kotlinx.coroutines.delay(1000)
+        s.releaseKey(RemoteKeyCode.KEYCODE_DPAD_CENTER)
+    }
+
     override suspend fun sendKey(key: RemoteKey) {
         val s = session ?: throw NotConnectedException()
         val code = when (key) {

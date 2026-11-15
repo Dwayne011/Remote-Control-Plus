@@ -200,6 +200,7 @@ fun RemoteScreen(
                             onKey = viewModel::press,
                             onSwipe = viewModel::swipe,
                             onRepeat = { viewModel.press(it, haptic = false) },
+                            onLongPress = { viewModel.longPress(it) },
                             modifier = Modifier
                                 .fillMaxHeight()
                                 .aspectRatio(1f, matchHeightConstraintsFirst = true),

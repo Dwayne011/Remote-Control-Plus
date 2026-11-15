@@ -44,6 +44,8 @@ taps to select; D-pad mode has buttons), Back and Home, On and Off, previous / p
 mute with volume down and up, and a Keyboard row.
 or plus and minus on those that do not (Samsung, Roku), and a Keyboard row. Devices only show
 the controls they support. On Apple TV a swipe is sent as a swipe on the Siri Remote trackpad.
+Holding the centre button, or holding still on the swipe pad, sends a one-second held OK (Apple TV,
+Google TV, Samsung and Roku; other devices get a normal press).
 The connection is picked up again automatically when the app returns to the foreground.
 
 ## Quick Settings tile

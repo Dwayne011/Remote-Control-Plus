@@ -67,6 +67,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun renameDevice(id: String, name: String) = remote.renameDevice(id, name)
     fun reconnect() = remote.reconnect()
     fun press(key: RemoteKey, haptic: Boolean = true) = remote.press(key, haptic)
+    fun longPress(key: RemoteKey) = remote.longPress(key)
     fun sendText(text: String) = remote.sendText(text)
 
     /** Called when the app returns to the foreground. */
