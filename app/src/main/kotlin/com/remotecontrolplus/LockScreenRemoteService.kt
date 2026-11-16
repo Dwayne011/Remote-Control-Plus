@@ -8,13 +8,11 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.graphics.drawable.Icon
-import android.media.MediaMetadata
 import android.media.VolumeProvider
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
-import android.os.Bundle
 import android.os.IBinder
+import android.widget.RemoteViews
 import com.remotecontrolplus.core.ConnectionState
 import com.remotecontrolplus.core.Diagnostics
 import com.remotecontrolplus.core.RemoteKey
@@ -28,12 +26,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * The lock-screen remote: a media-player card (media session plus MediaStyle
- * notification) with back, play/pause, forward and close, shown after the
- * remote is used and kept until closed. Android hides a media card it thinks
- * is paused or idle, so the session always reports "playing" and play/pause is
- * a custom action whose icon follows the button. The same session lets the
- * phone's volume buttons control the TV.
+ * The lock-screen remote: an ongoing notification with the app's own layout —
+ * a D-pad with OK, play/pause and close — whose buttons work without
+ * unlocking. Collapsed it is one row of the same buttons; expanded it has the
+ * round pad. It is shown while the TV is on and removed when it turns off. A
+ * media session rides along so the phone's volume buttons control the TV.
  */
 class LockScreenRemoteService : Service() {
 
@@ -57,9 +54,6 @@ class LockScreenRemoteService : Service() {
             },
         )
         session = MediaSession(this, "RemoteControlPlus").apply {
-            setCallback(object : MediaSession.Callback() {
-                override fun onCustomAction(action: String, extras: Bundle?) = handle(action)
-            })
             // The phone's volume buttons adjust the TV while this session is the active one.
             setPlaybackToRemote(object : VolumeProvider(VOLUME_CONTROL_RELATIVE, 100, 50) {
                 override fun onAdjustVolume(direction: Int) {
@@ -102,8 +96,7 @@ class LockScreenRemoteService : Service() {
                 act(if (playing) RemoteKey.PLAY else RemoteKey.PAUSE)
                 refresh()
             }
-            ACTION_PREVIOUS -> skip(forward = false)
-            ACTION_NEXT -> skip(forward = true)
+            else -> KEYS[action]?.let { act(it) }
         }
     }
 
@@ -117,9 +110,6 @@ class LockScreenRemoteService : Service() {
 
     /** Send [key], reconnecting first if the connection dropped while the phone was locked. */
     private fun act(key: RemoteKey, haptic: Boolean = true) = withConnection("$key") { it.press(key, haptic) }
-
-    /** Back or forward: a 10-second skip where the TV supports it, else its rewind/forward key. */
-    private fun skip(forward: Boolean) = withConnection(if (forward) "forward" else "back") { it.skip(forward) }
 
     private fun withConnection(what: String, send: (com.remotecontrolplus.data.RemoteManager) -> Unit) {
         scope.launch {
@@ -136,25 +126,10 @@ class LockScreenRemoteService : Service() {
         val device = app.remote.selected.value
         val name = device?.name ?: "TV"
         val subtitle = device?.type?.label ?: "Remote Control Plus"
-        session.setMetadata(
-            MediaMetadata.Builder()
-                .putString(MediaMetadata.METADATA_KEY_TITLE, name)
-                .putString(MediaMetadata.METADATA_KEY_ARTIST, subtitle)
-                .build(),
-        )
-        fun custom(action: String, label: String, icon: Int) =
-            PlaybackState.CustomAction.Builder(action, label, icon).build()
+        // "Playing" keeps this the session the phone's volume buttons go to.
         session.setPlaybackState(
             PlaybackState.Builder()
                 .setActions(0)
-                .addCustomAction(custom(ACTION_PREVIOUS, "Back", R.drawable.ic_n_prev))
-                .addCustomAction(
-                    if (playing) custom(ACTION_PLAY_PAUSE, "Pause", R.drawable.ic_n_pause)
-                    else custom(ACTION_PLAY_PAUSE, "Play", R.drawable.ic_n_play),
-                )
-                .addCustomAction(custom(ACTION_NEXT, "Forward", R.drawable.ic_n_next))
-                .addCustomAction(custom(ACTION_DISMISS, "Close", R.drawable.ic_n_close))
-                // Always "playing": Android drops a paused or idle media card from the lock screen.
                 .setState(PlaybackState.STATE_PLAYING, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1f)
                 .build(),
         )
@@ -166,23 +141,35 @@ class LockScreenRemoteService : Service() {
         }
     }
 
-    private fun build(name: String, subtitle: String): Notification {
-        fun service(action: String) = PendingIntent.getService(
-            this, action.hashCode(), Intent(this, LockScreenRemoteService::class.java).setAction(action),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        fun action(icon: Int, title: String, action: String) =
-            Notification.Action.Builder(Icon.createWithResource(this, icon), title, service(action)).build()
+    private fun service(action: String) = PendingIntent.getService(
+        this, action.hashCode(), Intent(this, LockScreenRemoteService::class.java).setAction(action),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
 
+    /** Wire the buttons both layouts share. */
+    private fun views(layout: Int) = RemoteViews(packageName, layout).apply {
+        setOnClickPendingIntent(R.id.n_up, service(ACTION_UP))
+        setOnClickPendingIntent(R.id.n_down, service(ACTION_DOWN))
+        setOnClickPendingIntent(R.id.n_left, service(ACTION_LEFT))
+        setOnClickPendingIntent(R.id.n_right, service(ACTION_RIGHT))
+        setOnClickPendingIntent(R.id.n_ok, service(ACTION_OK))
+        setOnClickPendingIntent(R.id.n_play_pause, service(ACTION_PLAY_PAUSE))
+        setOnClickPendingIntent(R.id.n_close, service(ACTION_DISMISS))
+        setImageViewResource(R.id.n_play_pause, if (playing) R.drawable.ic_n_pause else R.drawable.ic_n_play)
+    }
+
+    private fun build(name: String, subtitle: String): Notification {
         val open = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        // Android 13+ draws the buttons from the media session; these are for Android 12.
+        val big = views(R.layout.notification_remote_big).apply {
+            setTextViewText(R.id.n_title, name)
+            setTextViewText(R.id.n_subtitle, subtitle)
+        }
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_tile_remote)
-            .setContentTitle(name)
-            .setContentText(subtitle)
+            .setSubText(name)
             .setContentIntent(open)
             .setDeleteIntent(service(ACTION_DISMISS))
             .setVisibility(Notification.VISIBILITY_PUBLIC)
@@ -190,18 +177,9 @@ class LockScreenRemoteService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
-            .addAction(action(R.drawable.ic_n_prev, "Back", ACTION_PREVIOUS))
-            .addAction(
-                if (playing) action(R.drawable.ic_n_pause, "Pause", ACTION_PLAY_PAUSE)
-                else action(R.drawable.ic_n_play, "Play", ACTION_PLAY_PAUSE),
-            )
-            .addAction(action(R.drawable.ic_n_next, "Forward", ACTION_NEXT))
-            .addAction(action(R.drawable.ic_n_close, "Close", ACTION_DISMISS))
-            .setStyle(
-                Notification.MediaStyle()
-                    .setMediaSession(session.sessionToken)
-                    .setShowActionsInCompactView(0, 1, 2),
-            )
+            .setStyle(Notification.DecoratedCustomViewStyle())
+            .setCustomContentView(views(R.layout.notification_remote_small))
+            .setCustomBigContentView(big)
             .build()
     }
 
@@ -211,8 +189,18 @@ class LockScreenRemoteService : Service() {
         private const val OFF_GRACE_MS = 8_000L
         private const val ACTION_DISMISS = "com.remotecontrolplus.lock.DISMISS"
         private const val ACTION_PLAY_PAUSE = "com.remotecontrolplus.lock.PLAY_PAUSE"
-        private const val ACTION_PREVIOUS = "com.remotecontrolplus.lock.PREVIOUS"
-        private const val ACTION_NEXT = "com.remotecontrolplus.lock.NEXT"
+        private const val ACTION_UP = "com.remotecontrolplus.lock.UP"
+        private const val ACTION_DOWN = "com.remotecontrolplus.lock.DOWN"
+        private const val ACTION_LEFT = "com.remotecontrolplus.lock.LEFT"
+        private const val ACTION_RIGHT = "com.remotecontrolplus.lock.RIGHT"
+        private const val ACTION_OK = "com.remotecontrolplus.lock.OK"
+        private val KEYS = mapOf(
+            ACTION_UP to RemoteKey.UP,
+            ACTION_DOWN to RemoteKey.DOWN,
+            ACTION_LEFT to RemoteKey.LEFT,
+            ACTION_RIGHT to RemoteKey.RIGHT,
+            ACTION_OK to RemoteKey.SELECT,
+        )
 
         @Volatile private var running = false
 

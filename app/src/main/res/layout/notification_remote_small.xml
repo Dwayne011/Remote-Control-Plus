@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <ImageButton android:id="@+id/n_left" android:layout_width="40dp" android:layout_height="40dp"
+        android:background="@drawable/n_arrow_bg" android:contentDescription="Left" android:src="@drawable/ic_n_left" />
+    <ImageButton android:id="@+id/n_up" android:layout_width="40dp" android:layout_height="40dp"
+        android:background="@drawable/n_arrow_bg" android:contentDescription="Up" android:src="@drawable/ic_n_up" />
+    <TextView android:id="@+id/n_ok" android:layout_width="40dp" android:layout_height="40dp"
+        android:layout_marginHorizontal="2dp" android:background="@drawable/n_ok_bg" android:gravity="center"
+        android:text="OK" android:textAppearance="@android:style/TextAppearance.Material.Notification.Title" android:textSize="13sp" />
+    <ImageButton android:id="@+id/n_down" android:layout_width="40dp" android:layout_height="40dp"
+        android:background="@drawable/n_arrow_bg" android:contentDescription="Down" android:src="@drawable/ic_n_down" />
+    <ImageButton android:id="@+id/n_right" android:layout_width="40dp" android:layout_height="40dp"
+        android:background="@drawable/n_arrow_bg" android:contentDescription="Right" android:src="@drawable/ic_n_right" />
+
+    <FrameLayout android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+
+    <ImageButton android:id="@+id/n_play_pause" android:layout_width="40dp" android:layout_height="40dp"
+        android:background="@drawable/n_btn_bg" android:contentDescription="Play or pause" android:src="@drawable/ic_n_pause" />
+    <ImageButton android:id="@+id/n_close" android:layout_width="40dp" android:layout_height="40dp"
+        android:layout_marginStart="8dp" android:background="@drawable/n_btn_bg" android:contentDescription="Close"
+        android:src="@drawable/ic_n_close" />
+</LinearLayout>

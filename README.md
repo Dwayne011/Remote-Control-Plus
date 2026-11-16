@@ -50,14 +50,15 @@ The connection is picked up again automatically when the app returns to the fore
 
 ## Lock-screen remote
 
-When you use the remote and the TV is on, a media-player card appears on the lock screen and in
-the shade with back, play/pause, forward and a close button; tapping it opens the full remote. It
-stays while the TV is on, removes itself when the TV turns off (Apple TV, Google TV and Roku report
-this; on Samsung and LG a lost connection counts as off; a plain Chromecast cannot tell), and comes
-back the next time the remote is used. While it is showing, the phone's volume buttons control the
-TV. Back and forward skip ten seconds on Apple TV and send the rewind/forward key elsewhere. The TV
-does not report what is playing, so the play/pause icon follows the button, and the card always
-reports itself as playing so Android does not hide it.
+When you use the remote and the TV is on, a notification with the remote's own buttons appears on
+the lock screen and in the shade: a D-pad with OK, play/pause and close. Collapsed, the same
+buttons sit in one row; expanded, the pad is round. The buttons work without unlocking (the lock
+screen must be set to show notification content); tapping the notification itself opens the full
+remote. It stays while the TV is on, removes itself when the TV turns off (Apple TV, Google TV and
+Roku report this; on Samsung and LG a lost connection counts as off; a plain Chromecast cannot
+tell), and comes back the next time the remote is used. While it is showing, the phone's volume
+buttons control the TV. The TV does not report what is playing, so the play/pause icon follows the
+button.
 
 ## Quick Settings tile
 

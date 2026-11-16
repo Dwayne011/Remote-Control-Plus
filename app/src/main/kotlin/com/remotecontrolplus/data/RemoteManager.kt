@@ -172,17 +172,6 @@ class RemoteManager(
         }
     }
 
-    /** Jump back or forward, from the lock-screen remote. */
-    fun skip(forward: Boolean) = scope.launch {
-        val c = _controller.value ?: return@launch
-        Haptics.click()
-        Diagnostics.log("app", "skip ${if (forward) "forward" else "back"} on ${c.device.name}")
-        runCatching { withContext(Dispatchers.IO) { c.skip(forward) } }.onFailure {
-            Diagnostics.log("app", "skip failed", it)
-            _messages.tryEmit(it.message ?: "Command failed")
-        }
-    }
-
     /** Press and hold [key] (the OK button held down), with one haptic click. */
     fun longPress(key: RemoteKey) = scope.launch {
         val c = _controller.value ?: return@launch
