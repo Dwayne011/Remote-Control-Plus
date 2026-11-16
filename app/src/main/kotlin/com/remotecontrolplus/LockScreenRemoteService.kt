@@ -28,8 +28,9 @@ import kotlinx.coroutines.launch
  * The notification remote: an ongoing notification with the app's own layout
  * (DecoratedCustomViewStyle), usable from the lock screen without unlocking.
  *
- * Expanded: a device switcher and power on top, then Back / Home / Play-pause,
- * a D-pad with OK, and Volume up / Mute / Volume down. Collapsed: power,
+ * Expanded: a rail with switch-device and Volume up / Mute / Volume down, a
+ * rail with Power, Back, Home and Play-pause, then a large D-pad with OK at
+ * the end edge. The device name is in the notification header. Collapsed: power,
  * play/pause, volume down and volume up. Every button is a stateless trigger
  * that sends a broadcast to [RemoteCommandReceiver]; the notification is only
  * re-posted when the selected device changes.
@@ -134,7 +135,6 @@ class LockScreenRemoteService : Service() {
             bind(R.id.btn_collapsed_vol_up, RemoteCommandReceiver.ACTION_VOL_UP)
         }
         val expanded = RemoteViews(packageName, R.layout.notification_remote_expanded).apply {
-            setTextViewText(R.id.tv_device_name, name)
             bind(R.id.btn_device_switcher, RemoteCommandReceiver.ACTION_CYCLE_DEVICE)
             bind(R.id.btn_power, RemoteCommandReceiver.ACTION_POWER)
             bind(R.id.btn_back, RemoteCommandReceiver.ACTION_BACK)

@@ -4,6 +4,7 @@
      notification is drawn by SystemUI, where the app's own theme is not applied. -->
 <resources>
     <color name="n_surface_container_high">@android:color/system_neutral1_100</color>
+    <color name="n_surface_container_highest">@android:color/system_neutral1_200</color>
     <color name="n_on_surface">@android:color/system_neutral1_900</color>
     <color name="n_on_surface_variant">@android:color/system_neutral2_700</color>
     <color name="n_primary">@android:color/system_accent1_600</color>

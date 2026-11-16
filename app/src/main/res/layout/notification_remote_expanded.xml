@@ -1,184 +1,38 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Layout B: two button rails, then a D-pad that uses the full height at the end edge.
+     48 + 6 + 48 + 6 + 180 = 288dp, inside the ~292dp the decorated template leaves. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/remote_root"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
+    android:gravity="end|center_vertical"
+    android:orientation="horizontal"
     android:paddingTop="4dp"
-    android:paddingEnd="56dp"
     android:paddingBottom="4dp">
 
-    <!-- Top Row: Device Switcher + Stateless Power Trigger -->
-    <RelativeLayout
-        android:layout_width="match_parent"
-        android:layout_height="48dp">
-
-        <LinearLayout
-            android:id="@+id/btn_device_switcher"
-            android:layout_width="wrap_content"
-            android:layout_height="40dp"
-            android:layout_alignParentStart="true"
-            android:layout_centerVertical="true"
-            android:background="@drawable/bg_pill_surface"
-            android:clickable="true"
-            android:focusable="true"
-            android:gravity="center_vertical"
-            android:minWidth="48dp"
-            android:minHeight="48dp"
-            android:orientation="horizontal"
-            android:paddingStart="12dp"
-            android:paddingEnd="10dp">
-
-            <TextView
-                android:id="@+id/tv_device_name"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:text="Apple TV"
-                android:textAppearance="@android:style/TextAppearance.Material.Notification.Title"
-                android:textColor="@color/n_on_surface"
-                android:textSize="13sp" />
-
-            <ImageView
-                android:layout_width="16dp"
-                android:layout_height="16dp"
-                android:layout_marginStart="4dp"
-                android:contentDescription="@null"
-                android:src="@drawable/ic_chevron_down_16"
-                android:tint="@color/n_on_surface_variant" />
-        </LinearLayout>
-
-        <ImageButton
-            android:id="@+id/btn_power"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_alignParentEnd="true"
-            android:layout_centerVertical="true"
-            android:background="@drawable/bg_circle_power"
-            android:contentDescription="Power"
-            android:scaleType="centerInside"
-            android:src="@drawable/ic_power_24"
-            android:tint="@color/n_on_error_container" />
-    </RelativeLayout>
-
-    <!-- Main 3-Column Thumb Deck -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="152dp"
-        android:gravity="center"
-        android:orientation="horizontal"
-        android:paddingTop="8dp">
-
-        <!-- Left Rail: Back / Home / Play-Pause -->
+        <!-- Outer rail: switch device / Volume + / Mute / Volume - -->
         <LinearLayout
             android:layout_width="48dp"
-            android:layout_height="144dp"
+            android:layout_height="196dp"
+            android:layout_marginEnd="6dp"
             android:background="@drawable/bg_rail_container"
             android:orientation="vertical">
 
-            <ImageButton
-                android:id="@+id/btn_back"
+            <FrameLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_ripple_item"
-                android:contentDescription="Back"
-                android:src="@drawable/ic_arrow_back_20"
-                android:tint="@color/n_on_surface" />
-
-            <ImageButton
-                android:id="@+id/btn_home"
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_ripple_item"
-                android:contentDescription="Home"
-                android:src="@drawable/ic_home_20"
-                android:tint="@color/n_on_surface" />
-
-            <ImageButton
-                android:id="@+id/btn_play_pause"
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_ripple_item"
-                android:contentDescription="Play or Pause"
-                android:src="@drawable/ic_play_pause_20"
-                android:tint="@color/n_on_surface" />
-        </LinearLayout>
-
-        <!-- Centre: Circular D-Pad + OK Core -->
-        <FrameLayout
-            android:layout_width="128dp"
-            android:layout_height="128dp"
-            android:layout_marginStart="5dp"
-            android:layout_marginEnd="5dp"
-            android:background="@drawable/bg_dpad_ring">
-
-            <ImageButton
-                android:id="@+id/btn_dpad_up"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:layout_gravity="top|center_horizontal"
-                android:background="@drawable/bg_ripple_circle"
-                android:contentDescription="Up"
-                android:src="@drawable/ic_keyboard_arrow_up_24"
-                android:tint="@color/n_on_surface" />
-
-            <ImageButton
-                android:id="@+id/btn_dpad_down"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:layout_gravity="bottom|center_horizontal"
-                android:background="@drawable/bg_ripple_circle"
-                android:contentDescription="Down"
-                android:src="@drawable/ic_keyboard_arrow_down_24"
-                android:tint="@color/n_on_surface" />
-
-            <ImageButton
-                android:id="@+id/btn_dpad_left"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:layout_gravity="start|center_vertical"
-                android:background="@drawable/bg_ripple_circle"
-                android:contentDescription="Left"
-                android:src="@drawable/ic_keyboard_arrow_left_24"
-                android:tint="@color/n_on_surface" />
-
-            <ImageButton
-                android:id="@+id/btn_dpad_right"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:layout_gravity="end|center_vertical"
-                android:background="@drawable/bg_ripple_circle"
-                android:contentDescription="Right"
-                android:src="@drawable/ic_keyboard_arrow_right_24"
-                android:tint="@color/n_on_surface" />
-
-            <TextView
-                android:id="@+id/btn_dpad_ok"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:layout_gravity="center"
-                android:background="@drawable/bg_circle_primary"
-                android:clickable="true"
-                android:contentDescription="Select"
-                android:focusable="true"
-                android:gravity="center"
-                android:text="OK"
-                android:textColor="@color/n_on_primary"
-                android:textSize="13sp"
-                android:textStyle="bold" />
-        </FrameLayout>
-
-        <!-- Right Rail: Stateless Volume + / Mute / Volume - -->
-        <LinearLayout
-            android:layout_width="48dp"
-            android:layout_height="144dp"
-            android:background="@drawable/bg_rail_container"
-            android:orientation="vertical">
-
+                android:layout_weight="1">
+                <ImageButton
+                    android:id="@+id/btn_device_switcher"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:layout_gravity="center"
+                    android:background="@drawable/bg_circle_surface"
+                    android:contentDescription="Switch device"
+                    android:scaleType="centerInside"
+                    android:src="@drawable/ic_swap_20"
+                    android:tint="@color/n_on_surface" />
+            </FrameLayout>
             <ImageButton
                 android:id="@+id/btn_vol_up"
                 android:layout_width="match_parent"
@@ -188,7 +42,6 @@
                 android:contentDescription="Volume Up"
                 android:src="@drawable/ic_volume_up_20"
                 android:tint="@color/n_on_surface" />
-
             <ImageButton
                 android:id="@+id/btn_vol_mute"
                 android:layout_width="match_parent"
@@ -198,7 +51,6 @@
                 android:contentDescription="Mute"
                 android:src="@drawable/ic_volume_off_20"
                 android:tint="@color/n_on_surface_variant" />
-
             <ImageButton
                 android:id="@+id/btn_vol_down"
                 android:layout_width="match_parent"
@@ -210,5 +62,114 @@
                 android:tint="@color/n_on_surface" />
         </LinearLayout>
 
-    </LinearLayout>
+        <!-- Inner rail: Power / Back / Home / Play-Pause -->
+        <LinearLayout
+            android:layout_width="48dp"
+            android:layout_height="196dp"
+            android:layout_marginEnd="6dp"
+            android:background="@drawable/bg_rail_container"
+            android:orientation="vertical">
+
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1">
+                <ImageButton
+                    android:id="@+id/btn_power"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:layout_gravity="center"
+                    android:background="@drawable/bg_circle_power"
+                    android:contentDescription="Power"
+                    android:scaleType="centerInside"
+                    android:src="@drawable/ic_power_24"
+                    android:tint="@color/n_on_error_container" />
+            </FrameLayout>
+            <ImageButton
+                android:id="@+id/btn_back"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_ripple_item"
+                android:contentDescription="Back"
+                android:src="@drawable/ic_arrow_back_20"
+                android:tint="@color/n_on_surface" />
+            <ImageButton
+                android:id="@+id/btn_home"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_ripple_item"
+                android:contentDescription="Home"
+                android:src="@drawable/ic_home_20"
+                android:tint="@color/n_on_surface" />
+            <ImageButton
+                android:id="@+id/btn_play_pause"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_ripple_item"
+                android:contentDescription="Play or Pause"
+                android:src="@drawable/ic_play_pause_20"
+                android:tint="@color/n_on_surface" />
+        </LinearLayout>
+
+        <!-- D-pad with OK -->
+        <FrameLayout
+            android:layout_width="180dp"
+            android:layout_height="180dp"
+            android:background="@drawable/bg_dpad_ring">
+
+            <ImageButton
+                android:id="@+id/btn_dpad_up"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:layout_gravity="top|center_horizontal"
+                android:background="@drawable/bg_ripple_circle"
+                android:contentDescription="Up"
+                android:src="@drawable/ic_keyboard_arrow_up_24"
+                android:tint="@color/n_on_surface" />
+            <ImageButton
+                android:id="@+id/btn_dpad_down"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:layout_gravity="bottom|center_horizontal"
+                android:background="@drawable/bg_ripple_circle"
+                android:contentDescription="Down"
+                android:src="@drawable/ic_keyboard_arrow_down_24"
+                android:tint="@color/n_on_surface" />
+            <ImageButton
+                android:id="@+id/btn_dpad_left"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:layout_gravity="start|center_vertical"
+                android:background="@drawable/bg_ripple_circle"
+                android:contentDescription="Left"
+                android:src="@drawable/ic_keyboard_arrow_left_24"
+                android:tint="@color/n_on_surface" />
+            <ImageButton
+                android:id="@+id/btn_dpad_right"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:layout_gravity="end|center_vertical"
+                android:background="@drawable/bg_ripple_circle"
+                android:contentDescription="Right"
+                android:src="@drawable/ic_keyboard_arrow_right_24"
+                android:tint="@color/n_on_surface" />
+
+            <TextView
+                android:id="@+id/btn_dpad_ok"
+                android:layout_width="66dp"
+                android:layout_height="66dp"
+                android:layout_gravity="center"
+                android:background="@drawable/bg_circle_primary"
+                android:clickable="true"
+                android:contentDescription="Select"
+                android:focusable="true"
+                android:gravity="center"
+                android:text="OK"
+                android:textColor="@color/n_on_primary"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+        </FrameLayout>
 </LinearLayout>

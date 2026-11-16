@@ -56,8 +56,8 @@ When you use the remote and the TV is on, a notification with the remote's own b
 the lock screen and in the shade, and the buttons work without unlocking (the lock screen must be
 set to show notification content).
 
-- **Expanded:** a pill with the device name that switches to the next saved device, and Power; then
-  Back / Home / Play-pause, a D-pad with OK, and Volume up / Mute / Volume down.
+- **Expanded:** a rail with switch-device, Volume up, Mute and Volume down; a rail with Power, Back,
+  Home and Play-pause; and a large D-pad with OK on the right. The device name is in the header.
 - **Collapsed:** Power, Play/pause, Volume down, Volume up.
 
 Every button is a stateless trigger: nothing on the notification shows volume or mute state, and it
