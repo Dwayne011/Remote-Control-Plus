@@ -5,13 +5,13 @@
     android:layout_height="wrap_content"
     android:orientation="vertical"
     android:paddingTop="4dp"
+    android:paddingEnd="56dp"
     android:paddingBottom="4dp">
 
     <!-- Top Row: Device Switcher + Stateless Power Trigger -->
     <RelativeLayout
         android:layout_width="match_parent"
-        android:layout_height="48dp"
-        android:paddingBottom="4dp">
+        android:layout_height="48dp">
 
         <LinearLayout
             android:id="@+id/btn_device_switcher"
@@ -68,15 +68,14 @@
         android:layout_height="152dp"
         android:gravity="center"
         android:orientation="horizontal"
-        android:paddingTop="4dp">
+        android:paddingTop="8dp">
 
         <!-- Left Rail: Back / Home / Play-Pause -->
         <LinearLayout
-            android:layout_width="64dp"
-            android:layout_height="148dp"
+            android:layout_width="48dp"
+            android:layout_height="144dp"
             android:background="@drawable/bg_rail_container"
-            android:orientation="vertical"
-            android:padding="2dp">
+            android:orientation="vertical">
 
             <ImageButton
                 android:id="@+id/btn_back"
@@ -111,15 +110,15 @@
 
         <!-- Centre: Circular D-Pad + OK Core -->
         <FrameLayout
-            android:layout_width="148dp"
-            android:layout_height="148dp"
-            android:layout_marginStart="12dp"
-            android:layout_marginEnd="12dp"
+            android:layout_width="128dp"
+            android:layout_height="128dp"
+            android:layout_marginStart="5dp"
+            android:layout_marginEnd="5dp"
             android:background="@drawable/bg_dpad_ring">
 
             <ImageButton
                 android:id="@+id/btn_dpad_up"
-                android:layout_width="56dp"
+                android:layout_width="48dp"
                 android:layout_height="48dp"
                 android:layout_gravity="top|center_horizontal"
                 android:background="@drawable/bg_ripple_circle"
@@ -129,7 +128,7 @@
 
             <ImageButton
                 android:id="@+id/btn_dpad_down"
-                android:layout_width="56dp"
+                android:layout_width="48dp"
                 android:layout_height="48dp"
                 android:layout_gravity="bottom|center_horizontal"
                 android:background="@drawable/bg_ripple_circle"
@@ -140,7 +139,7 @@
             <ImageButton
                 android:id="@+id/btn_dpad_left"
                 android:layout_width="48dp"
-                android:layout_height="56dp"
+                android:layout_height="48dp"
                 android:layout_gravity="start|center_vertical"
                 android:background="@drawable/bg_ripple_circle"
                 android:contentDescription="Left"
@@ -150,7 +149,7 @@
             <ImageButton
                 android:id="@+id/btn_dpad_right"
                 android:layout_width="48dp"
-                android:layout_height="56dp"
+                android:layout_height="48dp"
                 android:layout_gravity="end|center_vertical"
                 android:background="@drawable/bg_ripple_circle"
                 android:contentDescription="Right"
@@ -159,8 +158,8 @@
 
             <TextView
                 android:id="@+id/btn_dpad_ok"
-                android:layout_width="56dp"
-                android:layout_height="56dp"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
                 android:layout_gravity="center"
                 android:background="@drawable/bg_circle_primary"
                 android:clickable="true"
@@ -175,11 +174,10 @@
 
         <!-- Right Rail: Stateless Volume + / Mute / Volume - -->
         <LinearLayout
-            android:layout_width="64dp"
-            android:layout_height="148dp"
+            android:layout_width="48dp"
+            android:layout_height="144dp"
             android:background="@drawable/bg_rail_container"
-            android:orientation="vertical"
-            android:padding="2dp">
+            android:orientation="vertical">
 
             <ImageButton
                 android:id="@+id/btn_vol_up"
