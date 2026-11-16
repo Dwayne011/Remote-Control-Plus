@@ -237,17 +237,13 @@ class AppleTvController(
         Diagnostics.log("appletv", "muted from $current")
     }
     /** A swipe on the pad becomes a swipe on the Siri Remote's virtual trackpad. */
-    override suspend fun swipe(direction: RemoteKey) {
-        val r = remote ?: throw NotConnectedException()
-        val (from, to) = when (direction) {
-            RemoteKey.UP -> (500 to 700) to (500 to 300)
-            RemoteKey.DOWN -> (500 to 300) to (500 to 700)
-            RemoteKey.LEFT -> (700 to 500) to (300 to 500)
-            RemoteKey.RIGHT -> (300 to 500) to (700 to 500)
-            else -> return sendKey(direction)
-        }
-        r.swipe(from.first, from.second, to.first, to.second, durationMs = 120)
-    }
+    /**
+     * A swipe is one arrow press. It used to be a synthetic swipe on the Siri
+     * Remote's trackpad, but tvOS's focus engine decides whether a trackpad
+     * swipe moves the focus, and it ignored a share of them (worse when swipes
+     * came quickly and the gestures overlapped). An arrow press always moves.
+     */
+    override suspend fun swipe(direction: RemoteKey) = sendKey(direction)
 
     override suspend fun setVolume(fraction: Float) {
         val r = remote ?: throw NotConnectedException()

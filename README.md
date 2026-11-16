@@ -50,7 +50,7 @@ The remote follows the Google Home TV remote: a large touch pad (Swipe mode flic
 taps to select; D-pad mode has buttons), Back and Home, On and Off, previous / play / pause / next,
 mute with volume down and up, and a Keyboard row.
 or plus and minus on those that do not (Samsung, Roku), and a Keyboard row. Devices only show
-the controls they support. On Apple TV a swipe is sent as a swipe on the Siri Remote trackpad.
+the controls they support. A swipe is sent as one arrow press on every device, including Apple TV, so each swipe moves once.
 On the swipe pad the dot follows your finger like a joystick: push it past a short distance to move once,
 keep it there to keep moving, and it springs back when you let go.
 Holding the centre button, or holding still on the swipe pad, sends a one-second held OK (Apple TV,
