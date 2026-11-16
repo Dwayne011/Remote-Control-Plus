@@ -1,6 +1,7 @@
 package com.remotecontrolplus.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -45,6 +46,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Color
+import com.remotecontrolplus.ui.theme.glass
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
@@ -52,19 +56,32 @@ import com.remotecontrolplus.core.RemoteKey
 import kotlin.math.abs
 import kotlinx.coroutines.launch
 
+/** Swipe / D-pad as two glass pills; the chosen one filled with the accent. */
 @Composable
 fun PadModeToggle(mode: String, onChange: (String) -> Unit, modifier: Modifier = Modifier) {
-    SingleChoiceSegmentedButtonRow(modifier = modifier) {
-        SegmentedButton(
-            selected = mode == "swipe",
-            onClick = { onChange("swipe") },
-            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-        ) { Text("Swipe") }
-        SegmentedButton(
-            selected = mode == "dpad",
-            onClick = { onChange("dpad") },
-            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-        ) { Text("D-pad") }
+    androidx.compose.foundation.layout.Row(
+        modifier = modifier,
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+    ) {
+        for ((value, label) in listOf("swipe" to "Swipe", "dpad" to "D-pad")) {
+            val on = mode == value
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(if (on) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.07f))
+                    .clickable { onChange(value) }
+                    .padding(vertical = 9.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (on) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Medium,
+                    color = if (on) MaterialTheme.colorScheme.onPrimary else Color(0xFFD5D9DF),
+                )
+            }
+        }
     }
 }
 
@@ -178,8 +195,7 @@ fun TouchPad(
         // Google Home's D-pad: one big ring with chevrons, and a large inner disc for OK.
         Box(
             modifier = modifier
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                .glass(CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             RepeatArrow(RemoteKey.UP, enabled, onKey, onRepeat, Modifier.align(Alignment.TopCenter).padding(top = 12.dp).size(64.dp)) {
@@ -212,14 +228,19 @@ fun TouchPad(
         // Google Home's swipe surface: a plain rounded square with a dot in the middle.
         Box(
             modifier = modifier
-                .clip(RoundedCornerShape(28.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .glass(RoundedCornerShape(28.dp))
                 .then(gestureModifier),
             contentAlignment = Alignment.Center,
         ) {
             Box(
                 modifier = Modifier
                     .offset { IntOffset(dot.value.x.roundToInt(), dot.value.y.roundToInt()) }
+                    .drawBehind {
+                        if (enabled) {
+                            drawCircle(Color.White.copy(alpha = 0.04f), radius = size.minDimension / 2 + 30.dp.toPx())
+                            drawCircle(Color.White.copy(alpha = 0.07f), radius = size.minDimension / 2 + 14.dp.toPx())
+                        }
+                    }
                     .size(56.dp)
                     .clip(CircleShape)
                     .background(if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outlineVariant),

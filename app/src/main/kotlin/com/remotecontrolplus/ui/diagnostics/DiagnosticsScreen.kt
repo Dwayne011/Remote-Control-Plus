@@ -51,8 +51,13 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
     }
 
     Scaffold(
+        containerColor = androidx.compose.ui.graphics.Color.Transparent,
         topBar = {
             TopAppBar(
+                colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+                    containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                    scrolledContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                ),
                 title = { Text("Diagnostics") },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }

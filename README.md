@@ -37,6 +37,13 @@ Unit tests, including the protocol test vectors for Apple TV and Android TV:
 The GitHub Actions workflow in `.github/workflows/android.yml` runs the tests and uploads a
 debug APK on every push.
 
+## Look
+
+The app uses the frosted style shared with At-a-Glance-Plus: a near-black base, soft blurred pools
+of the wallpaper's Material You colours, and translucent glass tiles with a thin light edge. It is
+always dark; accents follow the wallpaper. Sheets, dialogs and the Quick Settings pop-up use opaque
+dark surfaces so nothing shows through them.
+
 ## Layout
 
 The remote follows the Google Home TV remote: a large touch pad (Swipe mode flicks to move and

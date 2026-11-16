@@ -92,7 +92,8 @@ fun MiniRemote(remote: RemoteManager, onOpenFull: () -> Unit, onDismiss: () -> U
                 )
             },
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = com.remotecontrolplus.ui.theme.GlassSheet,
+        border = androidx.compose.foundation.BorderStroke(1.dp, com.remotecontrolplus.ui.theme.GlassEdge),
     ) {
         Column(
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp),

@@ -47,6 +47,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import com.remotecontrolplus.ui.theme.glass
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -107,8 +108,10 @@ fun RemoteScreen(
     var keyboardOpen by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
+        containerColor = Color.Transparent,
         topBar = {
             CenterAlignedTopAppBar(
+                colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
                 title = {
                     val device = selected
                     if (device == null) {
@@ -393,6 +396,7 @@ private fun PillButton(icon: ImageVector, label: String, enabled: Boolean, modif
         onClick = onClick,
         enabled = enabled,
         shape = RoundedCornerShape(20.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, com.remotecontrolplus.ui.theme.GlassEdge),
         modifier = modifier.height(56.dp),
     ) {
         Icon(icon, contentDescription = label)
@@ -427,9 +431,14 @@ private fun PowerRow(
 @Composable
 private fun PowerSegment(label: String, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val shape = RoundedCornerShape(20.dp)
-    val container = if (enabled) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+    val isOn = label == "On"
+    val container = when {
+        !enabled -> Color.Transparent
+        isOn -> com.remotecontrolplus.ui.theme.GlassUp.copy(alpha = 0.2f)
+        else -> com.remotecontrolplus.ui.theme.GlassFill
+    }
     val content = if (enabled) {
-        MaterialTheme.colorScheme.onPrimaryContainer
+        if (isOn) com.remotecontrolplus.ui.theme.GlassUp else MaterialTheme.colorScheme.onSurface
     } else {
         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
     }
@@ -438,9 +447,7 @@ private fun PowerSegment(label: String, enabled: Boolean, modifier: Modifier, on
             .fillMaxHeight()
             .clip(shape)
             .background(container)
-            .then(
-                if (enabled) Modifier else Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape),
-            )
+            .border(1.dp, if (enabled) com.remotecontrolplus.ui.theme.GlassEdge else MaterialTheme.colorScheme.outlineVariant, shape)
             .clickable(enabled = enabled, onClick = onClick),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
@@ -500,8 +507,7 @@ private fun VolumeRow(
                 modifier = Modifier
                     .weight(1f)
                     .height(56.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                    .glass(RoundedCornerShape(20.dp)),
             ) {
                 Box(
                     modifier = Modifier

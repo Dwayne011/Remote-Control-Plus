@@ -1,8 +1,9 @@
 <resources>
     <!-- Compose draws everything; this only styles the window before the first frame. -->
-    <style name="Theme.RemoteControlPlus" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
+    <style name="Theme.RemoteControlPlus" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/glass_base</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
     </style>
     <style name="Theme.RemoteControlPlus.Popup">
         <item name="android:windowIsTranslucent">true</item>
@@ -10,4 +11,5 @@
         <item name="android:windowAnimationStyle">@android:style/Animation.InputMethod</item>
         <item name="android:windowNoTitle">true</item>
     </style>
+    <color name="glass_base">#0C1018</color>
 </resources>

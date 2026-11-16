@@ -51,8 +51,13 @@ fun DiscoverScreen(
     LaunchedEffect(Unit) { viewModel.startScan() }
 
     Scaffold(
+        containerColor = androidx.compose.ui.graphics.Color.Transparent,
         topBar = {
             TopAppBar(
+                colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+                    containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                    scrolledContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                ),
                 title = { Text("Find TVs") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -94,6 +99,7 @@ fun DiscoverScreen(
                 items(discovered, key = { it.id }) { device ->
                     val alreadySaved = saved.any { it.id == device.id }
                     ListItem(
+                        colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
                         headlineContent = { Text(device.name) },
                         supportingContent = {
                             Text(device.type.label)
