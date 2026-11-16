@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material You roles for the notification remote, from the system's wallpaper
+     palette (API 31). The framework has no ?android:attr for these roles, and a
+     notification is drawn by SystemUI, where the app's own theme is not applied. -->
+<resources>
+    <color name="n_surface_container_high">@android:color/system_neutral1_100</color>
+    <color name="n_on_surface">@android:color/system_neutral1_900</color>
+    <color name="n_on_surface_variant">@android:color/system_neutral2_700</color>
+    <color name="n_primary">@android:color/system_accent1_600</color>
+    <color name="n_on_primary">@android:color/system_accent1_0</color>
+    <color name="n_error">#B3261E</color>
+    <color name="n_error_container">#F9DEDC</color>
+    <color name="n_on_error_container">#410E0B</color>
+</resources>

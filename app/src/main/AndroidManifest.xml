@@ -46,6 +46,10 @@
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
+        <receiver
+            android:name=".RemoteCommandReceiver"
+            android:exported="false" />
+
         <service
             android:name=".RemoteTileService"
             android:exported="true"

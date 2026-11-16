@@ -44,6 +44,8 @@ taps to select; D-pad mode has buttons), Back and Home, On and Off, previous / p
 mute with volume down and up, and a Keyboard row.
 or plus and minus on those that do not (Samsung, Roku), and a Keyboard row. Devices only show
 the controls they support. On Apple TV a swipe is sent as a swipe on the Siri Remote trackpad.
+On the swipe pad the dot follows your finger like a joystick: push it past a short distance to move once,
+keep it there to keep moving, and it springs back when you let go.
 Holding the centre button, or holding still on the swipe pad, sends a one-second held OK (Apple TV,
 Google TV, Samsung and Roku; other devices get a normal press).
 The connection is picked up again automatically when the app returns to the foreground.
@@ -51,14 +53,20 @@ The connection is picked up again automatically when the app returns to the fore
 ## Lock-screen remote
 
 When you use the remote and the TV is on, a notification with the remote's own buttons appears on
-the lock screen and in the shade: a D-pad with OK, play/pause and close. Collapsed, the same
-buttons sit in one row; expanded, the pad is round. The buttons work without unlocking (the lock
-screen must be set to show notification content); tapping the notification itself opens the full
-remote. It stays while the TV is on, removes itself when the TV turns off (Apple TV, Google TV and
-Roku report this; on Samsung and LG a lost connection counts as off; a plain Chromecast cannot
-tell), and comes back the next time the remote is used. While it is showing, the phone's volume
-buttons control the TV. The TV does not report what is playing, so the play/pause icon follows the
-button.
+the lock screen and in the shade, and the buttons work without unlocking (the lock screen must be
+set to show notification content).
+
+- **Expanded:** a pill with the device name that switches to the next saved device, and Power; then
+  Back / Home / Play-pause, a D-pad with OK, and Volume up / Mute / Volume down.
+- **Collapsed:** Power, Play/pause, Volume down, Volume up.
+
+Every button is a stateless trigger: nothing on the notification shows volume or mute state, and it
+is only re-posted when the device changes. Presses go through one serial queue, so rapid volume
+taps are sent in order. Power sends Off when the TV is known to be on and On otherwise; play/pause
+alternates, since the TV does not report playback. The notification stays while the TV is on and
+removes itself when it turns off (Apple TV, Google TV and Roku report this; on Samsung and LG a
+lost connection counts as off; a plain Chromecast cannot tell). While it is showing, the phone's
+volume buttons control the TV. Colours come from the system's wallpaper palette in light and dark.
 
 ## Quick Settings tile
 

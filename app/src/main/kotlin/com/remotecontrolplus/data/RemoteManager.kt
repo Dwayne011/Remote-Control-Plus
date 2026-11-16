@@ -184,6 +184,64 @@ class RemoteManager(
         }
     }
 
+    // ---------------------------------------------- notification remote queue
+    // Presses from the notification arrive as separate broadcasts, sometimes in
+    // quick bursts (volume). One consumer sends them strictly in order.
+
+    private class Queued(val haptic: Boolean, val resolve: () -> RemoteKey)
+
+    private val queue = kotlinx.coroutines.channels.Channel<Queued>(kotlinx.coroutines.channels.Channel.UNLIMITED)
+
+    /** Play/pause from the notification is one button; the TV does not report playback, so alternate. */
+    @Volatile private var assumedPlaying = true
+
+    init {
+        scope.launch {
+            for (command in queue) {
+                if (connectionState.value !is ConnectionState.Connected) {
+                    Diagnostics.log("app", "queued command while ${connectionState.value}; reconnecting first")
+                    kotlinx.coroutines.withTimeoutOrNull(10_000) { reconnect().join() }
+                }
+                val c = _controller.value ?: continue
+                val key = command.resolve()
+                if (command.haptic) Haptics.click()
+                Diagnostics.log("app", "press $key on ${c.device.name} (notification)")
+                runCatching { withContext(Dispatchers.IO) { c.sendKey(key) } }.onFailure {
+                    Diagnostics.log("app", "$key failed", it)
+                }
+            }
+        }
+    }
+
+    /** Send [key] after everything already queued. */
+    fun enqueue(key: RemoteKey, haptic: Boolean = true) {
+        queue.trySend(Queued(haptic) { key })
+    }
+
+    /** One power button: off when the TV is known to be on, otherwise on. */
+    fun enqueuePowerToggle() {
+        queue.trySend(Queued(true) { if (powerState.value == false) RemoteKey.POWER_ON else RemoteKey.POWER_OFF })
+    }
+
+    fun enqueuePlayPause() {
+        queue.trySend(
+            Queued(true) {
+                assumedPlaying = !assumedPlaying
+                if (assumedPlaying) RemoteKey.PLAY else RemoteKey.PAUSE
+            },
+        )
+    }
+
+    /** Select the next saved device, wrapping round. */
+    fun cycleDevice() {
+        val list = devices.value
+        if (list.size < 2) return
+        val next = list[(list.indexOfFirst { it.id == selected.value?.id } + 1) % list.size]
+        Diagnostics.log("app", "notification switched device to '${next.name}'")
+        Haptics.click()
+        selectDevice(next.id)
+    }
+
     fun press(key: RemoteKey, haptic: Boolean = true) = scope.launch {
         val c = _controller.value ?: return@launch
         onActivity?.invoke()

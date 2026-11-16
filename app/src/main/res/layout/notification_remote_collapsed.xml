@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="48dp"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <ImageButton
+        android:id="@+id/btn_collapsed_power"
+        android:layout_width="0dp"
+        android:layout_height="48dp"
+        android:layout_weight="1"
+        android:background="@drawable/bg_ripple_item"
+        android:contentDescription="Power"
+        android:src="@drawable/ic_power_24"
+        android:tint="@color/n_error" />
+
+    <ImageButton
+        android:id="@+id/btn_collapsed_play_pause"
+        android:layout_width="0dp"
+        android:layout_height="48dp"
+        android:layout_weight="1"
+        android:background="@drawable/bg_ripple_item"
+        android:contentDescription="Play or Pause"
+        android:src="@drawable/ic_play_pause_20"
+        android:tint="@color/n_on_surface" />
+
+    <ImageButton
+        android:id="@+id/btn_collapsed_vol_down"
+        android:layout_width="0dp"
+        android:layout_height="48dp"
+        android:layout_weight="1"
+        android:background="@drawable/bg_ripple_item"
+        android:contentDescription="Volume Down"
+        android:src="@drawable/ic_volume_down_20"
+        android:tint="@color/n_on_surface" />
+
+    <ImageButton
+        android:id="@+id/btn_collapsed_vol_up"
+        android:layout_width="0dp"
+        android:layout_height="48dp"
+        android:layout_weight="1"
+        android:background="@drawable/bg_ripple_item"
+        android:contentDescription="Volume Up"
+        android:src="@drawable/ic_volume_up_20"
+        android:tint="@color/n_on_surface" />
+</LinearLayout>

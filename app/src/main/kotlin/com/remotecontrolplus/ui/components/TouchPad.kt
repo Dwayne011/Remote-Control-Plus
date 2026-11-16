@@ -2,7 +2,22 @@ package com.remotecontrolplus.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -75,35 +90,86 @@ fun TouchPad(
 ) {
     val chevronTint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.outlineVariant
 
+    // Swipe surface: the dot follows the finger like a joystick. Pushing past
+    // the threshold sends that direction once; holding it there repeats, like
+    // holding an arrow; easing back to the middle stops. A touch that never
+    // moves is a tap, or a long press if held.
+    val dot = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
+    val gestureScope = rememberCoroutineScope()
+    val currentOnTap by rememberUpdatedState(onTap)
+    val currentOnSwipe by rememberUpdatedState(onSwipe)
+    val currentOnRepeat by rememberUpdatedState(onRepeat)
+    val currentOnLongPress by rememberUpdatedState(onLongPress)
+
     val gestureModifier = if (mode == "swipe" && enabled) {
-        Modifier
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onTap = { onTap(RemoteKey.SELECT) },
-                    onLongPress = { onLongPress(RemoteKey.SELECT) },
-                )
+        Modifier.pointerInput(Unit) {
+            val threshold = 40.dp.toPx()
+            val release = threshold * 0.6f
+            val maxTravel = 76.dp.toPx()
+            val slop = viewConfiguration.touchSlop
+            val longPressMs = viewConfiguration.longPressTimeoutMillis
+
+            fun directionOf(v: Offset, limit: Float): RemoteKey? = when {
+                abs(v.x) < limit && abs(v.y) < limit -> null
+                abs(v.x) > abs(v.y) -> if (v.x > 0) RemoteKey.RIGHT else RemoteKey.LEFT
+                else -> if (v.y > 0) RemoteKey.DOWN else RemoteKey.UP
             }
-            .pointerInput(Unit) {
+
+            awaitEachGesture {
+                val down = awaitFirstDown()
                 var total = Offset.Zero
-                detectDragGestures(
-                    onDragStart = { total = Offset.Zero },
-                    onDrag = { change, delta ->
-                        change.consume()
-                        total += delta
-                    },
-                    onDragEnd = {
-                        val threshold = 40.dp.toPx()
-                        val direction = when {
-                            abs(total.x) < threshold && abs(total.y) < threshold -> null
-                            abs(total.x) > abs(total.y) -> if (total.x > 0) RemoteKey.RIGHT else RemoteKey.LEFT
-                            else -> if (total.y > 0) RemoteKey.DOWN else RemoteKey.UP
+                var moved = false
+                var longPressed = false
+                var active: RemoteKey? = null
+                var repeater: Job? = null
+                val longPress = gestureScope.launch {
+                    delay(longPressMs)
+                    if (!moved) {
+                        longPressed = true
+                        currentOnLongPress(RemoteKey.SELECT)
+                    }
+                }
+                while (true) {
+                    val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                    if (!change.pressed) break
+                    total += change.positionChange()
+                    change.consume()
+                    if (!moved && total.getDistance() > slop) {
+                        moved = true
+                        longPress.cancel()
+                    }
+                    // The dot tracks the finger, held within the pad.
+                    val distance = total.getDistance()
+                    val shown = if (distance > maxTravel) total * (maxTravel / distance) else total
+                    gestureScope.launch { dot.snapTo(shown) }
+
+                    // Keep the current direction until the finger eases back or clearly
+                    // turns, so it does not flicker near a diagonal.
+                    val held = active
+                    val next = if (held != null && directionOf(total, release) == held) held else directionOf(total, threshold)
+                    if (next != active) {
+                        repeater?.cancel()
+                        active = next
+                        if (next != null) {
+                            currentOnSwipe(next)
+                            repeater = gestureScope.launch {
+                                delay(400)
+                                while (true) {
+                                    currentOnRepeat(next)
+                                    delay(110)
+                                }
+                            }
                         }
-                        if (direction != null) {
-                            onSwipe(direction)
-                        }
-                    },
-                )
+                    }
+                }
+                longPress.cancel()
+                repeater?.cancel()
+                gestureScope.launch {
+                    dot.animateTo(Offset.Zero, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium))
+                }
+                if (!moved && !longPressed) currentOnTap(RemoteKey.SELECT)
             }
+        }
     } else {
         Modifier
     }
@@ -153,6 +219,7 @@ fun TouchPad(
         ) {
             Box(
                 modifier = Modifier
+                    .offset { IntOffset(dot.value.x.roundToInt(), dot.value.y.roundToInt()) }
                     .size(56.dp)
                     .clip(CircleShape)
                     .background(if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outlineVariant),
@@ -162,7 +229,7 @@ fun TouchPad(
                     modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 28.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    HintLine(Icons.Filled.Swipe, "Swipe to navigate")
+                    HintLine(Icons.Filled.Swipe, "Swipe to navigate, hold to keep moving")
                     HintLine(Icons.Filled.TouchApp, "Tap to select, hold for long press")
                 }
             }

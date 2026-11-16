@@ -13,7 +13,6 @@ import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.IBinder
 import android.widget.RemoteViews
-import com.remotecontrolplus.core.ConnectionState
 import com.remotecontrolplus.core.Diagnostics
 import com.remotecontrolplus.core.RemoteKey
 import kotlinx.coroutines.CoroutineScope
@@ -22,24 +21,27 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * The lock-screen remote: an ongoing notification with the app's own layout —
- * a D-pad with OK, play/pause and close — whose buttons work without
- * unlocking. Collapsed it is one row of the same buttons; expanded it has the
- * round pad. It is shown while the TV is on and removed when it turns off. A
- * media session rides along so the phone's volume buttons control the TV.
+ * The notification remote: an ongoing notification with the app's own layout
+ * (DecoratedCustomViewStyle), usable from the lock screen without unlocking.
+ *
+ * Expanded: a device switcher and power on top, then Back / Home / Play-pause,
+ * a D-pad with OK, and Volume up / Mute / Volume down. Collapsed: power,
+ * play/pause, volume down and volume up. Every button is a stateless trigger
+ * that sends a broadcast to [RemoteCommandReceiver]; the notification is only
+ * re-posted when the selected device changes.
+ *
+ * It is shown while the TV is on and removed when it turns off. A media
+ * session rides along so the phone's volume buttons control the TV.
  */
 class LockScreenRemoteService : Service() {
 
     private val app get() = application as RemoteControlPlusApp
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var session: MediaSession
-
-    /** Our best guess; the TV does not report playback, so it follows the button. */
-    private var playing = true
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -48,7 +50,7 @@ class LockScreenRemoteService : Service() {
         running = true
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(CHANNEL, "Lock screen remote", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "Remote buttons on the lock screen after you use the remote"
+                description = "Remote buttons on the lock screen while the TV is on"
                 setShowBadge(false)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             },
@@ -57,23 +59,35 @@ class LockScreenRemoteService : Service() {
             // The phone's volume buttons adjust the TV while this session is the active one.
             setPlaybackToRemote(object : VolumeProvider(VOLUME_CONTROL_RELATIVE, 100, 50) {
                 override fun onAdjustVolume(direction: Int) {
-                    if (direction > 0) act(RemoteKey.VOLUME_UP, haptic = false)
-                    if (direction < 0) act(RemoteKey.VOLUME_DOWN, haptic = false)
+                    if (direction > 0) app.remote.enqueue(RemoteKey.VOLUME_UP, haptic = false)
+                    if (direction < 0) app.remote.enqueue(RemoteKey.VOLUME_DOWN, haptic = false)
                 }
             })
+            // "Playing" keeps this the session the volume buttons are routed to.
+            setPlaybackState(
+                PlaybackState.Builder()
+                    .setActions(0)
+                    .setState(PlaybackState.STATE_PLAYING, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1f)
+                    .build(),
+            )
             isActive = true
         }
-        refresh(first = true)
-        Diagnostics.log("lockscreen", "lock-screen remote shown")
+        startForeground(NOTIFICATION_ID, build(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+        Diagnostics.log("lockscreen", "notification remote shown")
 
-        scope.launch { app.remote.selected.collect { refresh() } }
+        // Re-post only when the target device (or its name) changes, never on a button press.
+        scope.launch {
+            app.remote.selected.distinctUntilChangedBy { it?.id to it?.name }.collect {
+                getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, build())
+            }
+        }
         // Only while the TV is on. "Off" has to hold for a few seconds, so a
-        // reconnect blip (which reads as off on Samsung and LG) does not remove the card.
+        // reconnect or a device switch (which reads as off for a moment) does not remove it.
         scope.launch {
             app.remote.powerState.collectLatest { on ->
                 if (on == false) {
                     delay(OFF_GRACE_MS)
-                    Diagnostics.log("lockscreen", "TV is off; removing the lock-screen remote")
+                    Diagnostics.log("lockscreen", "TV is off; removing the notification remote")
                     stopSelf()
                 }
             }
@@ -81,23 +95,11 @@ class LockScreenRemoteService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        intent?.action?.let { handle(it) }
-        return START_NOT_STICKY
-    }
-
-    private fun handle(action: String) {
-        when (action) {
-            ACTION_DISMISS -> {
-                Diagnostics.log("lockscreen", "lock-screen remote closed")
-                stopSelf()
-            }
-            ACTION_PLAY_PAUSE -> {
-                playing = !playing
-                act(if (playing) RemoteKey.PLAY else RemoteKey.PAUSE)
-                refresh()
-            }
-            else -> KEYS[action]?.let { act(it) }
+        if (intent?.action == ACTION_DISMISS) {
+            Diagnostics.log("lockscreen", "notification remote dismissed")
+            stopSelf()
         }
+        return START_NOT_STICKY
     }
 
     override fun onDestroy() {
@@ -108,78 +110,67 @@ class LockScreenRemoteService : Service() {
         super.onDestroy()
     }
 
-    /** Send [key], reconnecting first if the connection dropped while the phone was locked. */
-    private fun act(key: RemoteKey, haptic: Boolean = true) = withConnection("$key") { it.press(key, haptic) }
-
-    private fun withConnection(what: String, send: (com.remotecontrolplus.data.RemoteManager) -> Unit) {
-        scope.launch {
-            val remote = app.remote
-            if (remote.connectionState.value !is ConnectionState.Connected) {
-                Diagnostics.log("lockscreen", "$what pressed while ${remote.connectionState.value}; reconnecting first")
-                withTimeoutOrNull(10_000) { remote.reconnect().join() }
-            }
-            send(remote)
-        }
-    }
-
-    private fun refresh(first: Boolean = false) {
+    private fun build(): Notification {
         val device = app.remote.selected.value
         val name = device?.name ?: "TV"
-        val subtitle = device?.type?.label ?: "Remote Control Plus"
-        // "Playing" keeps this the session the phone's volume buttons go to.
-        session.setPlaybackState(
-            PlaybackState.Builder()
-                .setActions(0)
-                .setState(PlaybackState.STATE_PLAYING, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1f)
-                .build(),
+
+        /** A broadcast to [RemoteCommandReceiver]; the view id doubles as the unique request code. */
+        fun RemoteViews.bind(viewId: Int, action: String) = setOnClickPendingIntent(
+            viewId,
+            PendingIntent.getBroadcast(
+                this@LockScreenRemoteService,
+                viewId,
+                Intent(this@LockScreenRemoteService, RemoteCommandReceiver::class.java)
+                    .setAction(action)
+                    .putExtra(RemoteCommandReceiver.EXTRA_DEVICE, device?.id),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            ),
         )
-        val notification = build(name, subtitle)
-        if (first) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
-        } else {
-            getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification)
+
+        val collapsed = RemoteViews(packageName, R.layout.notification_remote_collapsed).apply {
+            bind(R.id.btn_collapsed_power, RemoteCommandReceiver.ACTION_POWER)
+            bind(R.id.btn_collapsed_play_pause, RemoteCommandReceiver.ACTION_PLAY_PAUSE)
+            bind(R.id.btn_collapsed_vol_down, RemoteCommandReceiver.ACTION_VOL_DOWN)
+            bind(R.id.btn_collapsed_vol_up, RemoteCommandReceiver.ACTION_VOL_UP)
         }
-    }
+        val expanded = RemoteViews(packageName, R.layout.notification_remote_expanded).apply {
+            setTextViewText(R.id.tv_device_name, name)
+            bind(R.id.btn_device_switcher, RemoteCommandReceiver.ACTION_CYCLE_DEVICE)
+            bind(R.id.btn_power, RemoteCommandReceiver.ACTION_POWER)
+            bind(R.id.btn_back, RemoteCommandReceiver.ACTION_BACK)
+            bind(R.id.btn_home, RemoteCommandReceiver.ACTION_HOME)
+            bind(R.id.btn_play_pause, RemoteCommandReceiver.ACTION_PLAY_PAUSE)
+            bind(R.id.btn_dpad_up, RemoteCommandReceiver.ACTION_DPAD_UP)
+            bind(R.id.btn_dpad_down, RemoteCommandReceiver.ACTION_DPAD_DOWN)
+            bind(R.id.btn_dpad_left, RemoteCommandReceiver.ACTION_DPAD_LEFT)
+            bind(R.id.btn_dpad_right, RemoteCommandReceiver.ACTION_DPAD_RIGHT)
+            bind(R.id.btn_dpad_ok, RemoteCommandReceiver.ACTION_DPAD_OK)
+            bind(R.id.btn_vol_up, RemoteCommandReceiver.ACTION_VOL_UP)
+            bind(R.id.btn_vol_mute, RemoteCommandReceiver.ACTION_VOL_MUTE)
+            bind(R.id.btn_vol_down, RemoteCommandReceiver.ACTION_VOL_DOWN)
+        }
 
-    private fun service(action: String) = PendingIntent.getService(
-        this, action.hashCode(), Intent(this, LockScreenRemoteService::class.java).setAction(action),
-        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-    )
-
-    /** Wire the buttons both layouts share. */
-    private fun views(layout: Int) = RemoteViews(packageName, layout).apply {
-        setOnClickPendingIntent(R.id.n_up, service(ACTION_UP))
-        setOnClickPendingIntent(R.id.n_down, service(ACTION_DOWN))
-        setOnClickPendingIntent(R.id.n_left, service(ACTION_LEFT))
-        setOnClickPendingIntent(R.id.n_right, service(ACTION_RIGHT))
-        setOnClickPendingIntent(R.id.n_ok, service(ACTION_OK))
-        setOnClickPendingIntent(R.id.n_play_pause, service(ACTION_PLAY_PAUSE))
-        setOnClickPendingIntent(R.id.n_close, service(ACTION_DISMISS))
-        setImageViewResource(R.id.n_play_pause, if (playing) R.drawable.ic_n_pause else R.drawable.ic_n_play)
-    }
-
-    private fun build(name: String, subtitle: String): Notification {
         val open = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val big = views(R.layout.notification_remote_big).apply {
-            setTextViewText(R.id.n_title, name)
-            setTextViewText(R.id.n_subtitle, subtitle)
-        }
+        val dismissed = PendingIntent.getService(
+            this, 0, Intent(this, LockScreenRemoteService::class.java).setAction(ACTION_DISMISS),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_tile_remote)
             .setSubText(name)
             .setContentIntent(open)
-            .setDeleteIntent(service(ACTION_DISMISS))
+            .setDeleteIntent(dismissed)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setCategory(Notification.CATEGORY_TRANSPORT)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
             .setStyle(Notification.DecoratedCustomViewStyle())
-            .setCustomContentView(views(R.layout.notification_remote_small))
-            .setCustomBigContentView(big)
+            .setCustomContentView(collapsed)
+            .setCustomBigContentView(expanded)
             .build()
     }
 
@@ -188,24 +179,11 @@ class LockScreenRemoteService : Service() {
         private const val NOTIFICATION_ID = 41
         private const val OFF_GRACE_MS = 8_000L
         private const val ACTION_DISMISS = "com.remotecontrolplus.lock.DISMISS"
-        private const val ACTION_PLAY_PAUSE = "com.remotecontrolplus.lock.PLAY_PAUSE"
-        private const val ACTION_UP = "com.remotecontrolplus.lock.UP"
-        private const val ACTION_DOWN = "com.remotecontrolplus.lock.DOWN"
-        private const val ACTION_LEFT = "com.remotecontrolplus.lock.LEFT"
-        private const val ACTION_RIGHT = "com.remotecontrolplus.lock.RIGHT"
-        private const val ACTION_OK = "com.remotecontrolplus.lock.OK"
-        private val KEYS = mapOf(
-            ACTION_UP to RemoteKey.UP,
-            ACTION_DOWN to RemoteKey.DOWN,
-            ACTION_LEFT to RemoteKey.LEFT,
-            ACTION_RIGHT to RemoteKey.RIGHT,
-            ACTION_OK to RemoteKey.SELECT,
-        )
 
         @Volatile private var running = false
 
         /**
-         * The remote was just used: show the lock-screen remote if it is not
+         * The remote was just used: show the notification remote if it is not
          * up. Starting it is only possible while the app is on screen, which
          * is when presses from the app happen.
          */
@@ -214,7 +192,7 @@ class LockScreenRemoteService : Service() {
             if (running || !visible || tvOn == false) return
             runCatching {
                 context.startForegroundService(Intent(context, LockScreenRemoteService::class.java))
-            }.onFailure { Diagnostics.log("lockscreen", "could not start the lock-screen remote", it) }
+            }.onFailure { Diagnostics.log("lockscreen", "could not start the notification remote", it) }
         }
     }
 }
