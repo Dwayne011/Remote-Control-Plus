@@ -39,7 +39,7 @@ class RemoteControlPlusApp : Application() {
     }
     val remote by lazy {
         RemoteManager(appScope, repository, credentials, controllers).also { manager ->
-            manager.onActivity = { LockScreenRemoteService.noteActivity(this, isVisible) }
+            manager.onActivity = { LockScreenRemoteService.noteActivity(this, isVisible, manager.powerState.value) }
         }
     }
 
