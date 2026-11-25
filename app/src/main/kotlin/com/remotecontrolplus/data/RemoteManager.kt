@@ -117,6 +117,19 @@ class RemoteManager(
         scope.launch {
             connectionState.collect { Diagnostics.log("app", "connection state: $it") }
         }
+        // After a failed connection, check the device's address once per device, so the
+        // log shows whether it is still the TV and what is turning connections away.
+        scope.launch {
+            var checked: String? = null
+            connectionState.collect { state ->
+                val device = selected.value ?: return@collect
+                if (state is ConnectionState.Connected) checked = null
+                if (state is ConnectionState.Error && checked != device.id + device.host) {
+                    checked = device.id + device.host
+                    launch { com.remotecontrolplus.core.NetworkCheck.run(device) }
+                }
+            }
+        }
     }
 
     fun selectDevice(id: String) = scope.launch {

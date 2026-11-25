@@ -13,8 +13,8 @@ android {
         applicationId = "com.remotecontrolplus"
         minSdk = 31
         targetSdk = 36
-        versionCode = 48
-        versionName = "0.7.1"
+        versionCode = 49
+        versionName = "0.7.2"
     }
 
     buildTypes {
