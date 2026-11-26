@@ -64,7 +64,7 @@ class NsdDiscovery(context: Context) {
      * reboots. Returns as soon as the device answers rather than waiting out a
      * fixed browse window; null if it does not answer within [timeoutMs].
      */
-    suspend fun resolveCompanionPort(device: TvDevice, timeoutMs: Long = 6000): Int? = withContext(Dispatchers.IO) {
+    suspend fun resolveCompanionPort(device: TvDevice, timeoutMs: Long = 6000): Pair<String, Int>? = withContext(Dispatchers.IO) {
         val started = System.currentTimeMillis()
         val found = kotlinx.coroutines.channels.Channel<NsdServiceInfo>(kotlinx.coroutines.channels.Channel.UNLIMITED)
         val listener = object : NsdManager.DiscoveryListener {
@@ -84,13 +84,18 @@ class NsdDiscovery(context: Context) {
                 for (info in found) {
                     val r = withTimeoutOrNull(3000) { resolve(info) } ?: continue
                     val id = r.txt("rpMRtID")
-                    if (id == device.id || r.host?.hostAddress == device.host) {
+                    // Match on the Apple TV's own id first: its address can change
+                    // (a router restart or update hands out new ones).
+                    val host = r.host?.hostAddress ?: continue
+                    if (id == device.id || (id == null && host == device.host)) {
                         Diagnostics.log(
                             "mdns",
-                            "Apple TV ${device.name} advertises Companion port ${r.port} (found in ${System.currentTimeMillis() - started}ms)",
+                            "Apple TV ${device.name} advertises Companion port ${r.port} at $host" +
+                                (if (host != device.host) " (saved address was ${device.host})" else "") +
+                                " (found in ${System.currentTimeMillis() - started}ms)",
                         )
                         rememberCompanionPort(device, r.port)
-                        return@withTimeoutOrNull r.port
+                        return@withTimeoutOrNull host to r.port
                     }
                 }
                 null

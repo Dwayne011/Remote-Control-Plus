@@ -116,6 +116,14 @@ Link, the way the iPhone's Control Center remote does it (`_siriStart`, `_siA` e
 SILK wideband frames, matching the captured TOC byte 0x48, `_siriStop`; message layout from captures in pyatv issues #2325 and #2875). Publicly
 this has opened Siri but not had speech recognised from a non-Apple client; the log records each step.
 
+## When a TV gets a new address
+
+Routers can hand devices new addresses after a restart or update. Apple TVs are looked up on the
+network before every connection by their own id, so the app follows them to a new address. For
+any device that does not answer at its saved address, the app searches the network for it (by
+its id, then its MAC address, then the name it advertises), saves the new address and reconnects,
+keeping the pairing. If it cannot be found, a network check of the saved address is logged.
+
 ## Diagnostics
 
 The bug icon in the title bar opens a log of everything the app did: discovery results from

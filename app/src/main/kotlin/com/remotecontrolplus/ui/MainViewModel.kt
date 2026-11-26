@@ -199,9 +199,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             pairingController?.disconnect()
             pairingController = null
             pairingHandle = null
+            // Selecting a different device connects to it by itself; only when it was
+            // already the selected one does it need an explicit reconnect. Checking
+            // after select() saw the new selection and opened a second, racing connection.
+            val alreadySelected = selected.value?.id == device.id
             repository.select(device.id)
-            // The selection may not change when re-pairing the current device.
-            if (selected.value?.id == device.id) remote.reconnect()
+            if (alreadySelected) remote.reconnect()
         } catch (e: Exception) {
             val message = e.message ?: "Pairing failed"
             _pairing.value = when (val s = _pairing.value) {

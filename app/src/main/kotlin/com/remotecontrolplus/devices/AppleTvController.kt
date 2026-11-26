@@ -36,14 +36,31 @@ import kotlinx.coroutines.flow.asStateFlow
  * the stored port is only a fallback.
  */
 class AppleTvController(
-    override val device: TvDevice,
+    initialDevice: TvDevice,
     private val serializedCredentials: String?,
     private val airplayCredentials: String? = null,
     private val scope: CoroutineScope,
-    private val portResolver: suspend (TvDevice, Long) -> Int?,
+    private val portResolver: suspend (TvDevice, Long) -> Pair<String, Int>?,
     private val cachedPort: (TvDevice) -> Int?,
     private val rememberPort: (TvDevice, Int) -> Unit,
+    /** Called with the device at its new address, so it can be saved. */
+    private val onMoved: (TvDevice) -> Unit = {},
 ) : TvController, Pairable, HoldableAssistant, VoiceCapable, VoicePairable {
+
+    @Volatile
+    override var device: TvDevice = initialDevice
+        private set
+
+    /** Where the Apple TV is now: its advertised address and port, or the saved ones. */
+    private suspend fun locate(timeoutMs: Long): Int {
+        val found = portResolver(device, timeoutMs)
+        if (found != null && found.first != device.host) {
+            Diagnostics.log("appletv", "'${device.name}' moved from ${device.host} to ${found.first}; using the new address")
+            device = device.copy(host = found.first)
+            onMoved(device)
+        }
+        return found?.second ?: cachedPort(device) ?: device.port
+    }
 
     override val capabilities = Capabilities(
         // Apple TV has no mute key; volume routes over HDMI-CEC when the TV supports it.
@@ -84,7 +101,7 @@ class AppleTvController(
                 Diagnostics.log("appletv", "attempt ${index + 1} of ${lookupTimeouts.size}; the Apple TV may be waking up")
                 delay(1_500)
             }
-            val port = portResolver(device, lookupTimeout) ?: cachedPort(device) ?: device.port
+            val port = locate(lookupTimeout)
             try {
                 attempt(credentials, port)
                 return
@@ -489,7 +506,7 @@ class AppleTvController(
     override suspend fun beginPairing(): PairingHandle {
         disconnect()
         _state.value = ConnectionState.Connecting
-        val port = portResolver(device, 6000) ?: cachedPort(device) ?: device.port
+        val port = locate(6000)
         Diagnostics.log("appletv", "pairing: opening ${device.host}:$port (stored port ${device.port})")
         val client = CompanionClient(device.host, port, scope)
         val session = try {

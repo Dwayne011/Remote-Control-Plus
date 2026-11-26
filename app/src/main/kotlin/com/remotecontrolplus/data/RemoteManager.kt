@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -43,6 +44,8 @@ class RemoteManager(
     private val repository: DeviceRepository,
     private val credentials: CredentialStore,
     private val controllers: ControllerFactory,
+    /** Finds a device again when its saved address stops working. */
+    private val discovery: com.remotecontrolplus.discovery.DeviceDiscovery? = null,
 ) {
     val devices: StateFlow<List<TvDevice>> = repository.devices
         .stateIn(scope, SharingStarted.Eagerly, emptyList())
@@ -117,8 +120,9 @@ class RemoteManager(
         scope.launch {
             connectionState.collect { Diagnostics.log("app", "connection state: $it") }
         }
-        // After a failed connection, check the device's address once per device, so the
-        // log shows whether it is still the TV and what is turning connections away.
+        // After a failed connection, look for the device on the network once per device
+        // and address: a router restart or update can give it a new address. If it has
+        // moved, save the new address and reconnect; if not, log a network check.
         scope.launch {
             var checked: String? = null
             connectionState.collect { state ->
@@ -126,7 +130,10 @@ class RemoteManager(
                 if (state is ConnectionState.Connected) checked = null
                 if (state is ConnectionState.Error && checked != device.id + device.host) {
                     checked = device.id + device.host
-                    launch { com.remotecontrolplus.core.NetworkCheck.run(device) }
+                    launch {
+                        val moved = relocate(device)
+                        if (moved == null) com.remotecontrolplus.core.NetworkCheck.run(device)
+                    }
                 }
             }
         }
@@ -195,6 +202,40 @@ class RemoteManager(
             Diagnostics.log("app", "long press $key failed", it)
             _messages.tryEmit(it.message ?: "Command failed")
         }
+    }
+
+    /**
+     * Search the network for [device] and, if it is now at a different address,
+     * save that and reconnect. Matches by the device's own id, then by MAC, then
+     * by the name it advertises. Returns the moved device, or null.
+     */
+    private suspend fun relocate(device: TvDevice): TvDevice? {
+        val finder = discovery ?: return null
+        Diagnostics.log("app", "'${device.name}' did not answer at ${device.host}; searching the network for it")
+        val found = ArrayList<TvDevice>()
+        runCatching { finder.scan(5000).collect { found += it } }
+            .onFailure { Diagnostics.log("app", "search failed", it) }
+        val wanted = device.mdnsName ?: device.name
+        val match = found.firstOrNull { it.type == device.type && it.id == device.id }
+            ?: found.firstOrNull { it.type == device.type && device.mac != null && it.mac.equals(device.mac, ignoreCase = true) }
+            ?: found.firstOrNull { it.type == device.type && (it.mdnsName ?: it.name) == wanted }
+        if (match == null) {
+            Diagnostics.log("app", "'${device.name}' was not found on the network; is it on and connected to this Wi-Fi?")
+            return null
+        }
+        if (match.host == device.host) {
+            Diagnostics.log("app", "'${device.name}' is still at ${device.host}")
+            return null
+        }
+        val moved = device.copy(host = match.host, mac = device.mac ?: match.mac)
+        Diagnostics.log("app", "'${device.name}' moved from ${device.host} to ${match.host}; saving and reconnecting")
+        repository.save(moved)
+        // Wait for the saved address to come through before reconnecting to it.
+        kotlinx.coroutines.withTimeoutOrNull(3_000) {
+            selected.first { it?.id == moved.id && it.host == moved.host }
+        }
+        if (selected.value?.id == moved.id) reconnect()
+        return moved
     }
 
     // ---------------------------------------------- notification remote queue
