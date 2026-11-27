@@ -65,11 +65,21 @@ fun PadModeToggle(mode: String, onChange: (String) -> Unit, modifier: Modifier =
     ) {
         for ((value, label) in listOf("swipe" to "Swipe", "dpad" to "D-pad")) {
             val on = mode == value
+            val fill by androidx.compose.animation.animateColorAsState(
+                if (on) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.07f),
+                com.remotecontrolplus.ui.theme.AtriumMotion.snappy(),
+                label = "pill",
+            )
+            val ink by androidx.compose.animation.animateColorAsState(
+                if (on) MaterialTheme.colorScheme.onPrimary else Color(0xFFD5D9DF),
+                com.remotecontrolplus.ui.theme.AtriumMotion.snappy(),
+                label = "pill text",
+            )
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(16.dp))
-                    .background(if (on) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.07f))
+                    .background(fill)
                     .clickable { onChange(value) }
                     .padding(vertical = 9.dp),
                 contentAlignment = Alignment.Center,
@@ -78,7 +88,7 @@ fun PadModeToggle(mode: String, onChange: (String) -> Unit, modifier: Modifier =
                     label,
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = if (on) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Medium,
-                    color = if (on) MaterialTheme.colorScheme.onPrimary else Color(0xFFD5D9DF),
+                    color = ink,
                 )
             }
         }
@@ -182,7 +192,7 @@ fun TouchPad(
                 longPress.cancel()
                 repeater?.cancel()
                 gestureScope.launch {
-                    dot.animateTo(Offset.Zero, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium))
+                    dot.animateTo(Offset.Zero, com.remotecontrolplus.ui.theme.AtriumMotion.bouncy())
                 }
                 if (!moved && !longPressed) currentOnTap(RemoteKey.SELECT)
             }

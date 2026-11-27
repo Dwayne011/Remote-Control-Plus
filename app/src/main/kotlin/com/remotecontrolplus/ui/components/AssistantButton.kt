@@ -45,12 +45,21 @@ fun AssistantButton(
         if (granted) remote.message("Microphone allowed. Hold the button and speak.")
         else remote.message("Without the microphone the button only opens the assistant on the TV")
     }
-    val container = if (listening) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest
-    val content = when {
-        listening -> MaterialTheme.colorScheme.onPrimary
-        enabled -> MaterialTheme.colorScheme.onSurface
-        else -> MaterialTheme.colorScheme.outlineVariant
-    }
+    // Listening switches on the quick spring: tapped and held often.
+    val container by androidx.compose.animation.animateColorAsState(
+        if (listening) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
+        com.remotecontrolplus.ui.theme.AtriumMotion.snappy(),
+        label = "assistant",
+    )
+    val content by androidx.compose.animation.animateColorAsState(
+        when {
+            listening -> MaterialTheme.colorScheme.onPrimary
+            enabled -> MaterialTheme.colorScheme.onSurface
+            else -> MaterialTheme.colorScheme.outlineVariant
+        },
+        com.remotecontrolplus.ui.theme.AtriumMotion.snappy(),
+        label = "assistant content",
+    )
     Box(
         modifier = modifier
             .clip(shape)

@@ -74,17 +74,19 @@ fun DiscoverScreen(
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             if (scanning) {
-                LinearProgressIndicator(Modifier.fillMaxWidth())
+                com.remotecontrolplus.ui.theme.WorkingLine(
+                    words = "Looking on your Wi-Fi for Samsung, LG, Roku, Apple TV, Google TV and Chromecast devices" +
+                        if (discovered.isEmpty()) "…" else " · ${discovered.size} found so far",
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                )
             } else {
-                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Make sure the TV is on and on the same Wi-Fi, then scan again if it is missing.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                )
             }
-            Text(
-                if (scanning) "Looking on your Wi-Fi for Samsung, LG, Roku, Apple TV, Google TV and Chromecast devices…"
-                else "Make sure the TV is on and on the same Wi-Fi, then scan again if it is missing.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            )
             if (discovered.isEmpty() && !scanning) {
                 Column(
                     Modifier.fillMaxSize().padding(32.dp),
@@ -99,6 +101,11 @@ fun DiscoverScreen(
                 items(discovered, key = { it.id }) { device ->
                     val alreadySaved = saved.any { it.id == device.id }
                     ListItem(
+                        modifier = Modifier.animateItem(
+                            fadeInSpec = com.remotecontrolplus.ui.theme.AtriumMotion.smooth(),
+                            placementSpec = com.remotecontrolplus.ui.theme.AtriumMotion.snappy(),
+                            fadeOutSpec = com.remotecontrolplus.ui.theme.AtriumMotion.interactive(),
+                        ).clickable(enabled = !alreadySaved) { viewModel.addDevice(device) },
                         colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
                         headlineContent = { Text(device.name) },
                         supportingContent = {
@@ -112,7 +119,6 @@ fun DiscoverScreen(
                                 FilledTonalButton(onClick = { viewModel.addDevice(device) }) { Text("Add") }
                             }
                         },
-                        modifier = Modifier.clickable(enabled = !alreadySaved) { viewModel.addDevice(device) },
                     )
                 }
             }

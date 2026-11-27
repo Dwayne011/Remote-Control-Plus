@@ -1,6 +1,10 @@
 package com.remotecontrolplus
 
 import android.os.Bundle
+import com.remotecontrolplus.ui.theme.pageEnter
+import com.remotecontrolplus.ui.theme.pageExit
+import com.remotecontrolplus.ui.theme.pagePopEnter
+import com.remotecontrolplus.ui.theme.pagePopExit
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -57,7 +61,14 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun AppNavHost(viewModel: MainViewModel) {
     val navController = rememberNavController()
-    NavHost(navController = navController, startDestination = "remote") {
+    NavHost(
+        navController = navController,
+        startDestination = "remote",
+        enterTransition = { pageEnter() },
+        exitTransition = { pageExit() },
+        popEnterTransition = { pagePopEnter() },
+        popExitTransition = { pagePopExit() },
+    ) {
         composable("remote") {
             RemoteScreen(
                 viewModel = viewModel,

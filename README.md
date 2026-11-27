@@ -44,6 +44,17 @@ of the wallpaper's Material You colours, and translucent glass tiles with a thin
 always dark; accents follow the wallpaper. Sheets, dialogs and the Quick Settings pop-up use opaque
 dark surfaces so nothing shows through them.
 
+## Motion
+
+Movement follows the Atrium animation pack (pixel-launcher-plus `docs/animation-spec.md`), in
+`ui/theme/Motion.kt`: four named springs (smooth, snappy, bouncy, interactive) for everything.
+Pages slide in from the right going deeper and leave the way they came; the remote's rows arrive
+one after another when a TV is shown; Swipe and D-pad, the status words and the top control
+change in place; found TVs fade in and the list makes room; pills, power and the assistant button
+change colour on springs; the joystick dot springs back as something let go. Loading always shows
+a bar with words (connecting, waking, searching, pairing), drawn on the frame clock. Notifications
+and the Quick Settings tile are drawn by the system and cannot be animated by the app.
+
 ## Layout
 
 The remote follows the Google Home TV remote: a large touch pad (Swipe mode flicks to move and

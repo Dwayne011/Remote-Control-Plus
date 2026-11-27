@@ -165,14 +165,15 @@ fun MiniRemote(remote: RemoteManager, onOpenFull: () -> Unit, onDismiss: () -> U
             }
             // Pad: a wide rounded surface in swipe mode, a circle in D-pad mode.
             if (hasNavigation) {
+                com.remotecontrolplus.ui.theme.Swap(padMode, Modifier.fillMaxWidth()) { mode ->
                 TouchPad(
-                    mode = padMode,
+                    mode = mode,
                     enabled = connected,
                     onKey = press,
                     onSwipe = { remote.swipe(it) },
                     onRepeat = { remote.press(it, haptic = false) },
                     onLongPress = { remote.longPress(it) },
-                    modifier = if (padMode == "dpad") {
+                    modifier = if (mode == "dpad") {
                         Modifier.size(PAD_HEIGHT)
                     } else {
                         Modifier
@@ -181,6 +182,7 @@ fun MiniRemote(remote: RemoteManager, onOpenFull: () -> Unit, onDismiss: () -> U
                     },
                     showHint = true,
                 )
+                }
             }
 
             // Back · Home · open full remote

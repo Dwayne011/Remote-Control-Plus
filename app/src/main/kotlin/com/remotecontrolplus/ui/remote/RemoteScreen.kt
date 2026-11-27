@@ -47,6 +47,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import com.remotecontrolplus.ui.theme.arriving
 import com.remotecontrolplus.ui.theme.glass
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -172,12 +173,18 @@ fun RemoteScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                when (connection) {
-                    ConnectionState.PairingRequired -> FilledTonalButton(
+                // The top control changes in place as the connection changes.
+                val topControl = when (connection) {
+                    ConnectionState.PairingRequired -> "pair"
+                    is ConnectionState.Error, ConnectionState.Disconnected -> "reconnect"
+                    else -> "mode"
+                }
+                com.remotecontrolplus.ui.theme.Swap(topControl, Modifier.fillMaxWidth().arriving(0, device.id)) { control -> when (control) {
+                    "pair" -> FilledTonalButton(
                         onClick = { viewModel.startPairing(device) },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("Pair with this ${device.type.label}") }
-                    is ConnectionState.Error, ConnectionState.Disconnected -> FilledTonalButton(
+                    "reconnect" -> FilledTonalButton(
                         onClick = { viewModel.reconnect() },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
@@ -188,17 +195,20 @@ fun RemoteScreen(
                     else -> if (caps.keys.any { it in Capabilities.NAVIGATION }) {
                         PadModeToggle(mode = padMode, onChange = viewModel::setPadMode, modifier = Modifier.fillMaxWidth())
                     }
-                }
+                } }
 
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxWidth(),
+                        .fillMaxWidth()
+                        .arriving(1, device.id),
                     contentAlignment = Alignment.Center,
                 ) {
                     if (caps.keys.any { it in Capabilities.NAVIGATION }) {
+                        // Swipe and D-pad swap in place.
+                        com.remotecontrolplus.ui.theme.Swap(padMode, Modifier.fillMaxHeight()) { mode ->
                         TouchPad(
-                            mode = padMode,
+                            mode = mode,
                             enabled = connected,
                             onKey = viewModel::press,
                             onSwipe = viewModel::swipe,
@@ -208,6 +218,7 @@ fun RemoteScreen(
                                 .fillMaxHeight()
                                 .aspectRatio(1f, matchHeightConstraintsFirst = true),
                         )
+                        }
                     } else {
                         Icon(
                             device.type.icon(),
@@ -219,7 +230,7 @@ fun RemoteScreen(
                 }
 
                 if (caps.keys.any { it in Capabilities.NAVIGATION }) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(Modifier.fillMaxWidth().arriving(2, device.id), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         val skin = device.type.skin()
                         PillButton(skin.backIcon, skin.backLabel, connected && RemoteKey.BACK in caps.keys, Modifier.weight(1f)) {
                             viewModel.press(RemoteKey.BACK)
@@ -248,9 +259,10 @@ fun RemoteScreen(
                     onEnabled = powerState != true && !waking && (connected || device.mac != null),
                     offEnabled = connected && powerState != false,
                     onKey = viewModel::press,
+                    modifier = Modifier.arriving(3, device.id),
                 )
 
-                MediaRow(keys = caps.keys, enabled = connected, onKey = viewModel::press)
+                MediaRow(keys = caps.keys, enabled = connected, onKey = viewModel::press, modifier = Modifier.arriving(4, device.id))
 
                 VolumeRow(
                     keys = caps.keys,
@@ -259,6 +271,7 @@ fun RemoteScreen(
                     level = volume,
                     onKey = viewModel::press,
                     onSet = viewModel::setVolume,
+                    modifier = Modifier.arriving(5, device.id),
                 )
 
                 if (caps.textEntry) {
@@ -268,7 +281,8 @@ fun RemoteScreen(
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(48.dp),
+                            .height(48.dp)
+                            .arriving(6, device.id),
                     ) {
                         Icon(Icons.Filled.Keyboard, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
@@ -373,20 +387,31 @@ private fun StatusLine(state: ConnectionState, deviceLabel: String, powerState: 
         is ConnectionState.Error -> MaterialTheme.colorScheme.error to state.message
         }
     }
+    val dotColour by androidx.compose.animation.animateColorAsState(dot, com.remotecontrolplus.ui.theme.AtriumMotion.smooth(), label = "status dot")
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
             Modifier
                 .size(8.dp)
                 .clip(CircleShape)
-                .background(dot),
+                .background(dotColour),
         )
         Spacer(Modifier.width(6.dp))
-        Text(
-            "$deviceLabel · $text",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-        )
+        com.remotecontrolplus.ui.theme.Swap("$deviceLabel · $text") { line ->
+            Text(
+                line,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
+    }
+    // No invisible loading: a bar while it connects or wakes the TV; the words above say which.
+    androidx.compose.animation.AnimatedVisibility(
+        visible = waking || state is ConnectionState.Connecting,
+        enter = androidx.compose.animation.fadeIn(com.remotecontrolplus.ui.theme.AtriumMotion.smooth()),
+        exit = androidx.compose.animation.fadeOut(com.remotecontrolplus.ui.theme.AtriumMotion.interactive()),
+    ) {
+        com.remotecontrolplus.ui.theme.MovingBar(modifier = Modifier.padding(top = 4.dp).width(120.dp), height = 3.dp)
     }
 }
 
@@ -411,10 +436,11 @@ private fun PowerRow(
     onEnabled: Boolean,
     offEnabled: Boolean,
     onKey: (RemoteKey) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     if (!showOn && !showOff) return
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(56.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -437,16 +463,18 @@ private fun PowerSegment(label: String, enabled: Boolean, modifier: Modifier, on
         isOn -> com.remotecontrolplus.ui.theme.GlassUp.copy(alpha = 0.2f)
         else -> com.remotecontrolplus.ui.theme.GlassFill
     }
-    val content = if (enabled) {
+    val contentTarget = if (enabled) {
         if (isOn) com.remotecontrolplus.ui.theme.GlassUp else MaterialTheme.colorScheme.onSurface
     } else {
         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
     }
+    val content by androidx.compose.animation.animateColorAsState(contentTarget, com.remotecontrolplus.ui.theme.AtriumMotion.smooth(), label = "power content")
+    val containerAnimated by androidx.compose.animation.animateColorAsState(container, com.remotecontrolplus.ui.theme.AtriumMotion.smooth(), label = "power container")
     Row(
         modifier = modifier
             .fillMaxHeight()
             .clip(shape)
-            .background(container)
+            .background(containerAnimated)
             .border(1.dp, if (enabled) com.remotecontrolplus.ui.theme.GlassEdge else MaterialTheme.colorScheme.outlineVariant, shape)
             .clickable(enabled = enabled, onClick = onClick),
         horizontalArrangement = Arrangement.Center,
@@ -459,10 +487,10 @@ private fun PowerSegment(label: String, enabled: Boolean, modifier: Modifier, on
 }
 
 @Composable
-private fun MediaRow(keys: Set<RemoteKey>, enabled: Boolean, onKey: (RemoteKey) -> Unit) {
+private fun MediaRow(keys: Set<RemoteKey>, enabled: Boolean, onKey: (RemoteKey) -> Unit, modifier: Modifier = Modifier) {
     if (RemoteKey.PLAY !in keys && RemoteKey.PAUSE !in keys) return
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -489,10 +517,11 @@ private fun VolumeRow(
     level: Float?,
     onKey: (RemoteKey) -> Unit,
     onSet: (Float) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     if (RemoteKey.VOLUME_UP !in keys && RemoteKey.MUTE !in keys) return
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {

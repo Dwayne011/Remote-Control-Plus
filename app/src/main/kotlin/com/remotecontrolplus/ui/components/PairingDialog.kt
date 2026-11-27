@@ -48,12 +48,12 @@ fun PairingDialog(
                     is PairingUiState.Starting -> {
                         Text("Contacting your ${device.type.label}…")
                         Spacer(Modifier.height(16.dp))
-                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                        com.remotecontrolplus.ui.theme.MovingBar()
                     }
                     is PairingUiState.AwaitingApproval -> {
                         Text(state.instruction)
                         Spacer(Modifier.height(16.dp))
-                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                        com.remotecontrolplus.ui.theme.MovingBar()
                     }
                     is PairingUiState.AwaitingPin -> {
                         Text(state.instruction)
@@ -71,7 +71,7 @@ fun PairingDialog(
                         )
                         if (state.inProgress) {
                             Spacer(Modifier.height(16.dp))
-                            LinearProgressIndicator(Modifier.fillMaxWidth())
+                            com.remotecontrolplus.ui.theme.MovingBar()
                         }
                     }
                     is PairingUiState.Failed -> Text(state.message, color = MaterialTheme.colorScheme.error)
