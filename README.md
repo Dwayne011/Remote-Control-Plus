@@ -139,7 +139,7 @@ keeping the pairing. If it cannot be found, a network check of the saved address
 
 The bug icon in the title bar opens a log of everything the app did: discovery results from
 mDNS, SSDP and the subnet probe, every connection and pairing step, every command sent and any
-error with its stack trace. **Share** sends it as text. Tokens and keys are redacted.
+error with its stack trace. **Share** sends it as a text file, so long logs are not cut off when pasted. Tokens and keys are redacted.
 
 ## Known limitations
 

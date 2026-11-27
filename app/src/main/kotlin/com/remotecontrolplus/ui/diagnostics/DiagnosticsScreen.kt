@@ -72,10 +72,28 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                         Icon(Icons.Filled.DeleteSweep, contentDescription = "Clear log")
                     }
                     IconButton(onClick = {
-                        val send = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_SUBJECT, "Remote Control Plus diagnostics")
-                            putExtra(Intent.EXTRA_TEXT, Diagnostics.export(includeWire = wire))
+                        // Shared as a text file: long logs pasted as text get cut off.
+                        val text = Diagnostics.export(includeWire = wire)
+                        val send = runCatching {
+                            val dir = java.io.File(context.cacheDir, "logs").apply { mkdirs() }
+                            dir.listFiles()?.forEach { it.delete() }
+                            val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.UK).format(java.util.Date())
+                            val file = java.io.File(dir, "remote-control-plus-log-$stamp.txt").apply { writeText(text) }
+                            val uri = androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", file)
+                            Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, "Remote Control Plus diagnostics")
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                clipData = android.content.ClipData.newRawUri("log", uri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                        }.getOrElse {
+                            Diagnostics.log("app", "could not write the log file; sharing as text", it)
+                            Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, "Remote Control Plus diagnostics")
+                                putExtra(Intent.EXTRA_TEXT, text)
+                            }
                         }
                         context.startActivity(Intent.createChooser(send, "Share diagnostics"))
                     }) {
