@@ -297,9 +297,17 @@ class RemoteManager(
     }
 
     fun press(key: RemoteKey, haptic: Boolean = true) = scope.launch {
-        val c = _controller.value ?: return@launch
+        val c0 = _controller.value ?: return@launch
         onActivity?.invoke()
         if (haptic) Haptics.click()
+        // Pressed while still connecting: wait for the connection (up to 12 s) instead of failing.
+        if (connectionState.value is ConnectionState.Connecting) {
+            Diagnostics.log("app", "$key pressed while connecting to ${c0.device.name}; waiting for the connection")
+            kotlinx.coroutines.withTimeoutOrNull(12_000) {
+                connectionState.first { it !is ConnectionState.Connecting }
+            }
+        }
+        val c = _controller.value ?: return@launch
         Diagnostics.log("app", "press $key on ${c.device.name}")
         runCatching { withContext(Dispatchers.IO) { c.sendKey(key) } }.onFailure {
             Diagnostics.log("app", "$key failed", it)

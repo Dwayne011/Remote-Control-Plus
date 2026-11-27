@@ -148,7 +148,14 @@ class RemoteSession(
             output = s.outputStream
         }
         readerJob = scope.launch(Dispatchers.IO) { readLoop() }
-        started.await()
+        // Local change: a TV that accepts the connection but never starts the session is an error,
+        // not an endless wait.
+        try {
+            kotlinx.coroutines.withTimeout(10_000) { started.await() }
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            close()
+            throw java.net.SocketTimeoutException("the TV accepted the connection but did not start the remote session within 10 s")
+        }
     }
 
     override fun sendKey(key: RemoteKeyCode, direction: RemoteDirection) {

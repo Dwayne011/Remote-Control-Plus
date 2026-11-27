@@ -25,6 +25,9 @@ private object AcceptAnyServer : X509TrustManager {
     override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
 }
 
+private const val CONNECT_TIMEOUT_MS = 5_000
+private const val HANDSHAKE_TIMEOUT_MS = 8_000
+
 /** Opens a TLS connection presenting [identity] as the client certificate. */
 internal fun connectTls(host: String, port: Int, identity: ClientIdentity): SSLSocket {
     val password = CharArray(0)
@@ -40,8 +43,18 @@ internal fun connectTls(host: String, port: Int, identity: ClientIdentity): SSLS
         init(keyManagers, arrayOf(AcceptAnyServer), SecureRandom())
     }
 
-    return (context.socketFactory.createSocket(host, port) as SSLSocket).apply {
-        soTimeout = 0
-        startHandshake()
+    // Local change: time limits on reaching the TV and on the handshake. Without them a host that
+    // silently drops the connection (a device now holding the TV's old address) hangs for minutes.
+    val plain = java.net.Socket()
+    try {
+        plain.connect(java.net.InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
+        val tls = context.socketFactory.createSocket(plain, host, port, true) as SSLSocket
+        tls.soTimeout = HANDSHAKE_TIMEOUT_MS
+        tls.startHandshake()
+        tls.soTimeout = 0
+        return tls
+    } catch (e: Exception) {
+        runCatching { plain.close() }
+        throw e
     }
 }
